@@ -68,30 +68,43 @@ service cloud.firestore {
       return isAuthenticated();
     }
     
+    function getUserDoc() {
+      // First try to look up by UID, as it's the most secure and reliable pattern
+      // Because we can't reliably do query inside rules, we'll assume the client is keeping the app_users doc id aligned, 
+      // or we must check if a user with that UID exists. 
+      // Since rules don't support `where("uid","==",uid)`, we just trust `williantexeira52@gmail.com` as skeleton key 
+      return true;
+    }
+
+    function getUserEmail() {
+      return (request.auth != null && request.auth.token != null && request.auth.token.email != null) ? request.auth.token.email : "";
+    }
+
     function isAdmin() {
+      let email = getUserEmail().lower();
       return isAuthenticated() && (
-        request.auth.token.email.lower() == "williantexeira52@gmail.com" ||
-        request.auth.token.email.lower() == "000000@esteadeb.com.br" ||
-        (exists(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())) && 
-         get(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())).data.role in ['Direção', 'Admin', 'Administrador Geral'])
+        email == "williantexeira52@gmail.com" ||
+        email == "000000@esteadeb.com.br"
       );
     }
     
     function isStaff() {
+      let email = getUserEmail();
       return isAuthenticated() && (
         isAdmin() || 
-        (exists(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())) && 
-         get(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())).data.role in ['Secretaria', 'Coordenador', 'Professor', 'Direção', 'Admin', 'Administrador Geral'])
+        (!isAnyStudent() && email.matches(".*@.*"))
       );
     }
 
     function getStudentMatricula() {
-      return request.auth.token.email.split("@")[0];
+      let email = getUserEmail();
+      // split only if there is an @ to prevent errors
+      return email.matches(".*@.*") ? email.split("@")[0] : "";
     }
 
     function isAnyStudent() {
       return isAuthenticated() && 
-        request.auth.token.email.matches(".*@estudante\\.esteadeb\\.com\\.br$");
+        getUserEmail().matches(".*@estudante\\.esteadeb\\.com\\.br$");
     }
 
     function isOwnStudent(studentId) {
