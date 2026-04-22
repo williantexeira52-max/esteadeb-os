@@ -1,0 +1,370 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System users (staff and admins)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "permissions": { "type": "object" },
+        "nucleoId": { "type": "string" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Academic records for students",
+      "type": "object",
+      "properties": {
+        "matricula": { "type": "string" },
+        "name": { "type": "string" },
+        "cpf": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "nucleoId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Ativo", "Trancado", "Desistente", "Concluinte", "Formado"] },
+        "academicHistory": { "type": "array" },
+        "financialStatus": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" }
+      },
+      "required": ["matricula", "name", "cpf", "nucleoId"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial records",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["Escola", "Lanche"] },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      }
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System action logs",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "details": { "type": "string" }
+      }
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Academic course definitions",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "durationYears": { "type": "number" },
+        "modulesPerYear": { "type": "number" },
+        "subjectsPerModule": { "type": "number" },
+        "totalSubjects": { "type": "number" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["name", "durationYears", "modulesPerYear", "subjectsPerModule", "totalSubjects", "status"]
+    },
+    "Grade": {
+      "title": "Grade",
+      "description": "Curriculum subjects/grades",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "year": { "type": "string", "enum": ["1º", "2º", "3º", "4º"] },
+        "module": { "type": "string" },
+        "workload": { "type": "number" },
+        "course": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "year", "module", "workload", "course"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "School classes/turmas",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "courseName": { "type": "string" },
+        "year": { "type": "string" },
+        "vacancies": { "type": "number" },
+        "enrolled": { "type": "number" },
+        "status": { "type": "string" },
+        "nucleoId": { "type": "string" },
+        "studentIds": { "type": "array" }
+      },
+      "required": ["name", "courseName", "year", "nucleoId"]
+    },
+    "ModuleHistory": {
+      "title": "ModuleHistory",
+      "description": "Historical record of modules taken by a class",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "year": { "type": "string" },
+        "moduleNumber": { "type": "number" },
+        "academicYear": { "type": "string" },
+        "semester": { "type": "string" },
+        "subjects": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["classId", "className", "year", "moduleNumber", "academicYear", "semester"]
+    },
+    "StudentRequest": {
+      "title": "StudentRequest",
+      "description": "Requests made by students to the administration",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendente", "Respondido"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "response": { "type": "string" },
+        "responseAt": { "type": "string", "format": "date-time" },
+        "attachments": { "type": "array" }
+      },
+      "required": ["studentId", "studentName", "subject", "description", "status"]
+    },
+    "ScheduleEntry": {
+      "title": "ScheduleEntry",
+      "description": "Class schedule entries",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "subjectName": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "room": { "type": "string" },
+        "weekday": { "type": "string" },
+        "period": { "type": "string", "enum": ["Manhã", "Noite", "Integral"] },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["classId", "subjectId", "teacherId", "weekday", "period", "startTime", "endTime"]
+    },
+    "Parcel": {
+      "title": "Parcel",
+      "description": "Individual payment installments for students",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "matricula": { "type": "string" },
+        "nucleoId": { "type": "string" },
+        "parcelNumber": { "type": "number" },
+        "totalParcels": { "type": "number" },
+        "originalValue": { "type": "number" },
+        "discountValue": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["Pendente", "Pago", "Atrasado"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "parcelNumber", "originalValue", "dueDate", "status"]
+    },
+    "SchoolAnnouncement": {
+      "title": "SchoolAnnouncement",
+      "description": "Announcements for the school community",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "targetAudience": { "type": "string" },
+        "isUrgent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["title", "message", "targetAudience"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Items in the school inventory",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "minStock": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "quantity", "price"]
+    },
+    "FinancialInstallment": {
+      "title": "FinancialInstallment",
+      "description": "Detailed financial installment records",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "baseValue": { "type": "number" },
+        "discount": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date" },
+        "status": { "type": "string" },
+        "paymentDate": { "type": "string", "format": "date-time" },
+        "paymentMethod": { "type": "string" },
+        "finalPaidValue": { "type": "number" }
+      },
+      "required": ["studentId", "baseValue", "dueDate", "status"]
+    },
+    "SchoolUnit": {
+      "title": "SchoolUnit",
+      "description": "Educational units/poles",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "coordinator": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "login": { "type": "string" },
+        "password": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "coordinator", "login", "password"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Presential school employees",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "cpf": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "role": { "type": "string" },
+        "admissionDate": { "type": "string", "format": "date" },
+        "permissions": { "type": "array" },
+        "nucleoId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "cpf", "email", "role"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "System coordinators and unit managers",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "phone": { "type": "string" },
+        "unitId": { "type": "string" },
+        "unitName": { "type": "string" },
+        "isGlobalAccess": { "type": "boolean" },
+        "restrictedNucleo": { "type": "string", "enum": ["ALL", "PRESENCIAL", "EAD", "SEMIPRESENCIAL"] },
+        "permissions": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "password", "unitId"]
+    },
+    "InventoryMovement": {
+      "title": "InventoryMovement",
+      "description": "Record of stock entries and withdrawals",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "type": { "type": "string", "enum": ["ENTRY", "WITHDRAWAL"] },
+        "quantity": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "createdBy": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and permissions"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student academic and personal data"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transactions"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit trail"
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Course definitions and structures"
+    },
+    "/grades/{gradeId}": {
+      "schema": "Grade",
+      "description": "Curriculum subjects and grades"
+    },
+    "/classes/{classId}": {
+      "schema": "Class",
+      "description": "School classes and student enrollments"
+    },
+    "/modules_history/{moduleId}": {
+      "schema": "ModuleHistory",
+      "description": "History of modules for classes"
+    },
+    "/requests/{requestId}": {
+      "schema": "StudentRequest",
+      "description": "Student requests and responses"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "ScheduleEntry",
+      "description": "Class schedules"
+    },
+    "/parcels/{parcelId}": {
+      "schema": "Parcel",
+      "description": "Student payment parcels"
+    },
+    "/school_announcements/{annId}": {
+      "schema": "SchoolAnnouncement",
+      "description": "School-wide announcements"
+    },
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Inventory management"
+    },
+    "/financial_installments/{instId}": {
+      "schema": "FinancialInstallment",
+      "description": "Financial installment tracking"
+    },
+    "/school_units/{unitId}": {
+      "schema": "SchoolUnit",
+      "description": "Management of school units/poles"
+    },
+    "/school_employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Presential staff records and permissions"
+    },
+    "/app_users/{appUserId}": {
+      "schema": "AppUser",
+      "description": "System coordinators and unit managers"
+    },
+    "/inventory_movements/{movId}": {
+      "schema": "InventoryMovement",
+      "description": "Stock movement history"
+    }
+  }
+}

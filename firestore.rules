@@ -1,0 +1,307 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, name, email, role, permissions, nucleoId
+    //
+    // Collection: students
+    // Fields: matricula, name, cpf, birthDate, nucleoId, status, academicHistory, financialStatus, classId, className
+    //
+    // Collection: classes
+    // Fields: name, courseName, year, vacancies, enrolled, status, nucleoId, studentIds
+    //
+    // Collection: school_announcements
+    // Fields: title, message, targetAudience, isUrgent, createdAt, createdBy
+    //
+    // Collection: inventory
+    // Fields: name, category, quantity, price, minStock, createdAt, updatedAt
+    //
+    // Collection: financial_installments
+    // Fields: studentId, studentName, baseValue, discount, dueDate, status, paymentDate, paymentMethod, finalPaidValue
+    //
+    // Collection: transactions
+    // Fields: studentId, amount, type, date, status
+    //
+    // Collection: auditLogs
+    // Fields: userId, action, timestamp, details
+    //
+    // Collection: courses
+    // Fields: name, durationYears, modulesPerYear, subjectsPerModule, totalSubjects, status, createdAt, createdBy, updatedAt, updatedBy
+    //
+    // Collection: grades
+    // Fields: name, year, module, workload, course, createdAt, updatedAt
+    //
+    // Collection: modules_history
+    // Fields: classId, className, year, moduleNumber, academicYear, semester, subjects, createdAt
+    //
+    // Collection: requests
+    // Fields: studentId, studentName, subject, description, status, createdAt, response, responseAt, attachments
+    //
+    // Collection: schedules
+    // Fields: classId, className, subjectId, subjectName, teacherId, teacherName, room, weekday, period, startTime, endTime, createdAt
+    //
+    // Collection: school_units
+    // Fields: name, address, coordinator, phone, email, login, password, createdAt, createdBy
+    //
+    // Collection: school_employees
+    // Fields: name, cpf, phone, email, address, role, admissionDate, permissions, nucleoId, createdAt, createdBy
+    //
+    // Collection: app_users
+    // Fields: name, email, password, phone, unitId, unitName, isGlobalAccess, permissions, createdAt, createdBy
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isEmailVerified() {
+      // In this specific system, we mostly use internal emails, 
+      // so we trust the auth provider for now but keep this as a hook.
+      return isAuthenticated();
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email.lower() == "williantexeira52@gmail.com" ||
+        request.auth.token.email.lower() == "000000@esteadeb.com.br" ||
+        (exists(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())) && 
+         get(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())).data.role in ['Direção', 'Admin', 'Administrador Geral'])
+      );
+    }
+    
+    function isStaff() {
+      return isAuthenticated() && (
+        isAdmin() || 
+        (exists(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())) && 
+         get(/databases/$(database)/documents/app_users/$(request.auth.token.email.lower())).data.role in ['Secretaria', 'Coordenador', 'Professor', 'Direção', 'Admin', 'Administrador Geral'])
+      );
+    }
+
+    function getStudentMatricula() {
+      return request.auth.token.email.split("@")[0];
+    }
+
+    function isAnyStudent() {
+      return isAuthenticated() && 
+        request.auth.token.email.matches(".*@estudante\\.esteadeb\\.com\\.br$");
+    }
+
+    function isOwnStudent(studentId) {
+      return isAuthenticated() && (
+        studentId == request.auth.uid || 
+        studentId == getStudentMatricula() ||
+        (exists(/databases/$(database)/documents/students/$(studentId)) && 
+         get(/databases/$(database)/documents/students/$(studentId)).data.matricula == getStudentMatricula())
+      );
+    }
+
+    function isRecordOwner(data) {
+      return isAuthenticated() && (
+        data.studentId == request.auth.uid || 
+        data.studentId == getStudentMatricula()
+      );
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /inventory_movements/{id} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow get: if isStaff() || isOwnStudent(studentId);
+      allow list: if isStaff() || (isAnyStudent() && resource.data.matricula == getStudentMatricula());
+      allow update: if isStaff() || (isOwnStudent(studentId) && incoming().diff(existing()).affectedKeys().hasOnly(['photoURL', 'updatedAt', 'phone', 'address']));
+      allow create: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /school_announcements/{annId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /school_events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /inventory/{itemId} {
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /financial_plans/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /parcels/{parcelId} {
+      allow read: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula());
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /financial_discounts/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    match /financial_extras/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    match /subject_enrollments/{id} {
+      allow read: if isStaff() || isRecordOwner(resource.data);
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{configId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /courses/{courseId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /modules/{moduleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /modules_history/{moduleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /grades/{gradeId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /academic_records/{recordId} {
+      allow read: if isStaff() || isRecordOwner(resource.data);
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /financial_installments/{instId} {
+      allow read: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula());
+      allow list: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula());
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /requests/{requestId} {
+      allow read: if isStaff() || isRecordOwner(resource.data);
+      allow create: if isAuthenticated() && incoming().studentId == getStudentMatricula();
+      allow update: if isStaff() || (isRecordOwner(resource.data) && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'subject', 'attachments']));
+      allow delete: if isAdmin();
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /school_units/{unitId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /school_employees/{empId} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /school_cash/{cashId} {
+      allow read, write: if isStaff();
+    }
+
+    match /snack_cash/{cashId} {
+      allow read, write: if isStaff();
+    }
+
+    match /school_reconciliations/{id} {
+      allow read, write: if isStaff();
+    }
+
+    match /snack_reconciliations/{id} {
+      allow read, write: if isStaff();
+    }
+
+    match /financial_sales/{saleId} {
+      allow read, write: if isStaff();
+    }
+
+    match /app_users/{appUserId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /occurrences/{occurrenceId} {
+      allow read: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula());
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+  }
+}
