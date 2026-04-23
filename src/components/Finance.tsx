@@ -69,16 +69,17 @@ export const Finance: React.FC = () => {
     if (!nucleo || !user) return;
     const q = query(
       collection(db, 'transactions'),
-      where('nucleoId', '==', nucleo),
-      orderBy('date', 'desc'),
-      limit(50)
+      orderBy('date', 'desc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({
+      let list = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      
+      list = list.filter((i: any) => !i.nucleoId || i.nucleoId === nucleo);
+
       setTransactions(list);
       
       const total = list.reduce((acc, curr: any) => acc + (curr.amount || 0), 0);
@@ -88,7 +89,7 @@ export const Finance: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [nucleo]);
+  }, [nucleo, user]);
 
   const calculatePhysicalTotal = () => {
     return Object.entries(physicalCash).reduce((acc, [val, qty]) => acc + (Number(val) * (qty as number)), 0);

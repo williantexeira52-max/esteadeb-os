@@ -169,10 +169,16 @@ export const Sidebar: React.FC<SidebarProps & { isMobileOpen?: boolean; setIsMob
     // Admins and Directors see everything
     if (['admin', 'direção', 'administrador geral', 'administrador'].includes(role)) return true;
     
-    // Check for explicit role match (case-insensitive)
+    // If the user has a custom permissions array, USE IT strictly for non-admins
+    if (Array.isArray(profile.permissions)) {
+      if (itemId && profile.permissions.includes(itemId)) return true;
+      return false;
+    }
+    
+    // Check for explicit role match (case-insensitive) as fallback
     if (itemRoles.some(r => r.toLowerCase() === role)) return true;
     
-    // Check for explicit module permission
+    // Check for explicit module permission (fallback if permissions is not array but string? shouldn't happen)
     if (itemId && profile.permissions?.includes(itemId)) return true;
     
     return false;

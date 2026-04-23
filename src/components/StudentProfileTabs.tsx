@@ -54,7 +54,7 @@ interface StudentProfileTabsProps {
 }
 
 export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student, onUpdate }) => {
-  const { profile, nucleo, isAdmin } = useAuth();
+  const { profile, nucleo, isAdmin, user } = useAuth();
   const [activeTab, setActiveTab] = useState('core');
   const [isSaving, setIsSaving] = useState(false);
   const [isContractOpen, setIsContractOpen] = useState(false);
@@ -105,13 +105,15 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
 
   // Tab 3: Financial Fetch
   useEffect(() => {
-    if (!student.id) return;
+    if (!student.id || !user) return;
     const q = query(collection(db, 'financial_installments'), where('studentId', '==', student.id));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setParcels(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'financial_installments');
     });
     return () => unsubscribe();
-  }, [student.id]);
+  }, [student.id, user]);
 
   // Fetch Polos for editing
   useEffect(() => {
@@ -124,7 +126,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
 
   // Tab 5: Occurrences Fetch
   useEffect(() => {
-    if (!student.id) return;
+    if (!student.id || !user) return;
     const q = query(
       collection(db, 'occurrences'), 
       where('studentId', '==', student.id),
@@ -132,19 +134,23 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setOccurrences(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error(error);
     });
     return () => unsubscribe();
-  }, [student.id, nucleo]);
+  }, [student.id, nucleo, user]);
 
   // Tab 6: Academic Records Fetch
   useEffect(() => {
-    if (!student.id) return;
+    if (!student.id || !user) return;
     const q = query(collection(db, 'academic_records'), where('studentId', '==', student.id));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setAcademicRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error(error);
     });
     return () => unsubscribe();
-  }, [student.id]);
+  }, [student.id, user]);
 
   // Fetch modules for dispensa (dynamically resolve course from class)
   useEffect(() => {

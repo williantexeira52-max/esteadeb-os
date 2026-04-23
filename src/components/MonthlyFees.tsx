@@ -117,21 +117,20 @@ export const MonthlyFees: React.FC = () => {
 
     let qInstallments = query(
       collection(db, 'financial_installments'), 
-      where('nucleoId', '==', nucleo),
       orderBy('dueDate', 'desc')
     );
 
-    if (profile?.poloId) {
-      qInstallments = query(
-        collection(db, 'financial_installments'),
-        where('nucleoId', '==', nucleo),
-        where('poloId', '==', profile.poloId),
-        orderBy('dueDate', 'desc')
-      );
-    }
-
     const unsubscribeInstallments = onSnapshot(qInstallments, (snapshot) => {
-      setInstallments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Installment)));
+      let list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Installment));
+      
+      // Filter in memory for nucleo and polo to handle old records gracefully
+      list = list.filter((i: any) => !i.nucleoId || i.nucleoId === nucleo);
+      
+      if (profile?.poloId) {
+        list = list.filter((i: any) => i.poloId === profile.poloId);
+      }
+      
+      setInstallments(list);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'financial_installments');
     });
@@ -192,7 +191,7 @@ export const MonthlyFees: React.FC = () => {
       unsubscribePlans();
       unsubscribeDiscounts();
     };
-  }, []);
+  }, [nucleo, profile, user]);
 
   const calculatePenalties = (installment: Installment, customPaymentDate?: string) => {
     if (installment.status === 'Pago') {

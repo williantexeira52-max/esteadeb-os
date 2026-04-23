@@ -8,6 +8,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 
 // Import components
 import { Finance as FinancialDashboard } from './Finance';
@@ -18,6 +19,7 @@ import { FinancialSettings } from './FinancialSettings';
 
 export const FinanceHub: React.FC = () => {
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const { profile } = useAuth();
 
   const tabs = ['Dashboard', 'Mensalidades', 'Fluxo de Caixa', 'Inadimplência', 'Configurações'];
 

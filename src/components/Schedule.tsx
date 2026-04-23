@@ -51,6 +51,7 @@ interface ScheduleEntry {
   period: 'Manhã' | 'Noite' | 'Integral';
   startTime: string;
   endTime: string;
+  nucleoId?: string;
   createdAt?: any;
 }
 
@@ -109,15 +110,23 @@ export const Schedule: React.FC = () => {
         id: doc.id,
         ...doc.data()
       })) as ScheduleEntry[];
-      setSchedules(list);
+      
+      // Memory filter to prevent composite index requirements
+      const filtered = list.filter(schedule => {
+        const schedNucleo = schedule.nucleoId || 'PRESENCIAL';
+        return schedNucleo === nucleo;
+      });
+      setSchedules(filtered);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'schedules');
     });
 
     // Fetch Classes
-    const qClasses = query(collection(db, 'classes'), where('nucleoId', '==', nucleo), orderBy('name', 'asc'));
+    const qClasses = query(collection(db, 'classes'), orderBy('name', 'asc'));
     const unsubscribeClasses = onSnapshot(qClasses, (snapshot) => {
-      setClasses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const cls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const filteredCls = cls.filter((c: any) => (c.nucleoId || 'PRESENCIAL') === nucleo);
+      setClasses(filteredCls);
     });
 
     // Fetch Subjects (Grades)
@@ -129,7 +138,9 @@ export const Schedule: React.FC = () => {
     // Fetch Teachers (Staff where role == Professor)
     const qTeachers = query(collection(db, 'school_employees'), where('role', '==', 'Professor'), orderBy('name', 'asc'));
     const unsubscribeTeachers = onSnapshot(qTeachers, (snapshot) => {
-      setTeachers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const profs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const filteredProfs = profs.filter((p: any) => (p.nucleoId || 'PRESENCIAL') === nucleo);
+      setTeachers(filteredProfs);
     });
 
     return () => {

@@ -551,7 +551,7 @@ export const Settings: React.FC = () => {
               <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-red-100">
                 <div>
                   <p className="text-sm font-bold text-navy">Limpar Lixeira</p>
-                  <p className="text-xs text-gray-500">Apagar permanentemente alunos excluídos.</p>
+                  <p className="text-xs text-gray-500">Apagar permanentemente itens que estão na lixeira.</p>
                 </div>
                 <Button 
                   variant="destructive" 
@@ -561,22 +561,6 @@ export const Settings: React.FC = () => {
                   className="gap-2"
                 >
                   <Trash2 size={14} /> Esvaziar
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-red-100">
-                <div>
-                  <p className="text-sm font-bold text-navy">Resetar Banco de Dados</p>
-                  <p className="text-xs text-gray-500">Apagar TODOS os alunos e parcelas deste núcleo.</p>
-                </div>
-                <Button 
-                  variant="destructive" 
-                  size="sm" 
-                  onClick={handleResetDatabase}
-                  disabled={resetLoading}
-                  className="gap-2"
-                >
-                  <RefreshCw size={14} className={resetLoading ? "animate-spin" : ""} /> Resetar
                 </Button>
               </div>
             </CardContent>

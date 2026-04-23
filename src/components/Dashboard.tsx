@@ -160,7 +160,7 @@ export const Dashboard = () => {
       unsubStudents();
       unsubTransactions();
     };
-  }, [profile?.id]);
+  }, [nucleo, profile, user]);
 
   const COLORS = ['#1e3a8a', '#cda53f', '#c8102e', '#007a33'];
 

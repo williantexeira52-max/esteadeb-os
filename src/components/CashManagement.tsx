@@ -87,7 +87,7 @@ interface Reconciliation {
 }
 
 export const CashManagement: React.FC = () => {
-  const { profile, nucleo, systemConfig } = useAuth();
+  const { profile, nucleo, systemConfig, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'school' | 'snack'>('school');
   const [transactions, setTransactions] = useState<CashTransaction[]>([]);
   const [students, setStudents] = useState<any[]>([]);
@@ -155,29 +155,25 @@ export const CashManagement: React.FC = () => {
   const reconCollectionName = activeTab === 'school' ? 'school_reconciliations' : 'snack_reconciliations';
 
   useEffect(() => {
+    if (!nucleo || !user || !profile) return;
     setLoading(true);
     let q = query(
       collection(db, collectionName), 
-      where('nucleoId', '==', nucleo),
-      orderBy('date', 'desc'), 
-      limit(100)
+      orderBy('date', 'desc')
     );
 
-    if (profile?.poloId) {
-      q = query(
-        collection(db, collectionName),
-        where('nucleoId', '==', nucleo),
-        where('poloId', '==', profile.poloId),
-        orderBy('date', 'desc'),
-        limit(100)
-      );
-    }
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({
+      let list = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as CashTransaction[];
+      
+      list = list.filter((i: any) => !i.nucleoId || i.nucleoId === nucleo);
+
+      if (profile?.poloId) {
+         list = list.filter((i: any) => i.poloId === profile.poloId);
+      }
+
       setTransactions(list);
       setLoading(false);
     }, (error) => {
@@ -225,7 +221,7 @@ export const CashManagement: React.FC = () => {
       unsubscribeStudents();
       unsubscribeExtras();
     };
-  }, [activeTab, collectionName, reconCollectionName]);
+  }, [activeTab, collectionName, reconCollectionName, nucleo, profile, user]);
 
   const totals = useMemo(() => {
     return transactions.reduce((acc, curr) => {

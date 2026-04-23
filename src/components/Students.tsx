@@ -390,37 +390,17 @@ export const Students: React.FC = () => {
     setDeleteConfirm(null);
 
     try {
-      // 1. Hard delete student as requested
-      await deleteDoc(doc(db, 'students', id));
-      
-      // 2. Remove from Requests
-      const requestsQuery = query(collection(db, 'requests'), where('studentId', '==', id));
-      const requestsSnap = await getDocs(requestsQuery);
-      const batch = writeBatch(db);
-      requestsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 3. Remove from Financial installments
-      const installmentsQuery = query(collection(db, 'financial_installments'), where('studentId', '==', id));
-      const installmentsSnap = await getDocs(installmentsQuery);
-      installmentsSnap.docs.forEach(d => batch.delete(d.ref));
-      
-      // 4. Remove from Classes (studentIds array)
-      const classesQuery = query(collection(db, 'classes'), where('studentIds', 'array-contains', id));
-      const classesSnap = await getDocs(classesQuery);
-      classesSnap.docs.forEach(d => {
-        const currentIds = d.data().studentIds || [];
-        batch.update(d.ref, {
-          studentIds: currentIds.filter((sid: string) => sid !== id),
-          enrolled: Math.max(0, (d.data().enrolled || 0) - 1)
-        });
+      // Soft delete student
+      await updateDoc(doc(db, 'students', id), {
+        deleted: true,
+        status: 'inativo',
+        updatedAt: serverTimestamp()
       });
-
-      await batch.commit();
 
       if (nucleo) syncTurmasIntegrity(nucleo);
       
       // Log action
-      await logAction(profile?.uid || user?.uid || 'system', 'Exclusão de Aluno', `Aluno ${deleteConfirm.name} removido com cascata.`);
+      await logAction(profile?.uid || user?.uid || 'system', 'Exclusão de Aluno', `Aluno ${deleteConfirm.name} movido para a lixeira.`);
     } catch (error) {
       console.error("Erro ao deletar aluno:", error);
     }
@@ -971,21 +951,23 @@ export const Students: React.FC = () => {
                       <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
                         <Search size={32} className="text-slate-300" />
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1 text-center">
                         <p className="text-navy font-black uppercase tracking-widest text-sm">
                           Nenhum aluno em: {nucleo}
                         </p>
-                        <p className="text-xs text-slate-400 font-medium">
-                          Filtro ativo: {nucleo} • Total na base: {Object.values(otherNucleiCount).reduce((a, b) => a + b, 0)}
-                        </p>
+                        {!(profile?.restrictedNucleo && profile.restrictedNucleo !== 'ALL') && (
+                          <p className="text-xs text-slate-400 font-medium">
+                            Filtro ativo: {nucleo} • Total na base: {Object.values(otherNucleiCount).reduce((a, b) => a + b, 0)}
+                          </p>
+                        )}
                       </div>
 
-                      {Object.entries(otherNucleiCount).some(([k, v]) => k !== nucleo && v > 0) && (
-                        <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 max-w-md mx-auto">
+                      {!(profile?.restrictedNucleo && profile.restrictedNucleo !== 'ALL') && Object.entries(otherNucleiCount).some(([k, v]) => k !== nucleo && v > 0) && (
+                        <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 max-w-md mx-auto text-center">
                           <p className="text-[10px] text-amber-800 font-black uppercase tracking-widest mb-4 flex items-center justify-center gap-2">
                              <AlertTriangle size={14} /> Localizamos alunos em outras modalidades:
                           </p>
-                          <div className="flex justify-center gap-2">
+                          <div className="flex justify-center flex-wrap gap-2">
                              {Object.entries(otherNucleiCount).map(([k, v]) => (
                                v > 0 && k !== nucleo && (
                                  <Button 
@@ -1006,9 +988,9 @@ export const Students: React.FC = () => {
                         </div>
                       )}
 
-                      {!Object.values(otherNucleiCount).some(v => v > 0) && (
+                      {((profile?.restrictedNucleo && profile.restrictedNucleo !== 'ALL') || !Object.values(otherNucleiCount).some(v => v > 0)) && (
                          <div className="flex flex-col items-center gap-4">
-                            <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em]">Não há registros em nenhuma modalidade</p>
+                            {!Object.values(otherNucleiCount).some(v => v > 0) && <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em] text-center">Não há registros em nenhuma modalidade</p>}
                             <Button onClick={() => setIsAddDialogOpen(true)} className="bg-navy rounded-xl">
                                <Plus size={16} className="mr-2" /> Cadastrar Primeiro Aluno
                             </Button>

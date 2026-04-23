@@ -198,53 +198,61 @@ const AppContent: React.FC = () => {
     const userRole = profile?.role?.toLowerCase() || '';
     const isAdminUser = ['admin', 'direção', 'administrador geral', 'administrador'].includes(userRole);
 
-    const guard = (Component: React.FC, requiredRoles: string[]) => {
+    const guard = (Component: React.FC, requiredRoles: string[], tabId?: string) => {
       if (isAdminUser) return <Component />;
       
+      const userPermissions = Array.isArray(profile?.permissions) ? profile.permissions : null;
+      if (userPermissions) {
+        if (tabId && userPermissions.includes(tabId)) return <Component />;
+        // Specific mapping fallbacks for UI consistency
+        if (tab === 'monthly-fees' && userPermissions.includes('finance')) return <Component />;
+        if (tab === 'cash-management' && userPermissions.includes('finance')) return <Component />;
+        // If they have explicit permissions but this tab isn't one of them, deny
+        return <Dashboard />;
+      }
+
       const normalizedRoles = (requiredRoles || []).map(r => r.toLowerCase());
       if (normalizedRoles.includes(userRole)) return <Component />;
       
-      // Safety check for permissions array
-      const userPermissions = Array.isArray(profile?.permissions) ? profile.permissions : [];
-      if (userPermissions.includes(tab)) return <Component />;
+      if (userPermissions && userPermissions.includes(tab)) return <Component />;
       
       return <Dashboard />; 
     };
 
     switch (tab) {
       case 'dashboard': return <Dashboard />;
-      case 'academic': return guard(Academic, ['staff', 'secretaria', 'coordenador']);
-      case 'students': return guard(Students, ['staff', 'secretaria', 'coordenador']);
-      case 'classes': return guard(Classes, ['staff', 'secretaria', 'coordenador']);
-      case 'courses': return guard(Courses, ['staff', 'secretaria', 'coordenador']);
+      case 'academic': return guard(Academic, ['staff', 'secretaria', 'coordenador'], 'academic');
+      case 'students': return guard(Students, ['staff', 'secretaria', 'coordenador'], 'students');
+      case 'classes': return guard(Classes, ['staff', 'secretaria', 'coordenador'], 'classes');
+      case 'courses': return guard(Courses, ['staff', 'secretaria', 'coordenador'], 'courses');
       case 'curriculum':
-      case 'grade': return guard(Grade, ['staff', 'secretaria', 'coordenador']);
-      case 'modules': return guard(Modules, ['staff', 'secretaria', 'coordenador']);
-      case 'grades': return guard(GradesEntry, ['staff', 'secretaria', 'coordenador']);
-      case 'requests': return guard(Requests, ['staff', 'secretaria', 'coordenador']);
-      case 'schedules': return guard(Schedule, ['staff', 'secretaria', 'coordenador']);
-      case 'finance': return guard(FinanceHub, ['staff', 'secretaria', 'coordenador']);
-      case 'monthly-fees': return guard(MonthlyFees, ['staff', 'secretaria', 'coordenador']);
-      case 'announcements': return guard(Announcements, ['staff', 'secretaria', 'coordenador']);
-      case 'settings': return guard(SchoolSettings, ['admin', 'direção']);
-      case 'audit': return guard(Audit, ['admin', 'direção']);
-      case 'carnets': return guard(Carnets, ['staff', 'secretaria', 'coordenador']);
+      case 'grade': return guard(Grade, ['staff', 'secretaria', 'coordenador'], 'curriculum');
+      case 'modules': return guard(Modules, ['staff', 'secretaria', 'coordenador'], 'modules');
+      case 'grades': return guard(GradesEntry, ['staff', 'secretaria', 'coordenador'], 'grades');
+      case 'requests': return guard(Requests, ['staff', 'secretaria', 'coordenador'], 'requests');
+      case 'schedules': return guard(Schedule, ['staff', 'secretaria', 'coordenador'], 'schedules');
+      case 'finance': return guard(FinanceHub, ['staff', 'secretaria', 'coordenador'], 'finance');
+      case 'monthly-fees': return guard(MonthlyFees, ['staff', 'secretaria', 'coordenador'], 'finance');
+      case 'announcements': return guard(Announcements, ['staff', 'secretaria', 'coordenador'], 'announcements');
+      case 'settings': return guard(SchoolSettings, ['admin', 'direção'], 'settings');
+      case 'audit': return guard(Audit, ['admin', 'direção'], 'audit');
+      case 'carnets': return guard(Carnets, ['staff', 'secretaria', 'coordenador'], 'carnets');
       case 'inventory':
-      case 'stock': return guard(Inventory, ['staff', 'secretaria', 'coordenador']);
-      case 'audit-logs': return guard(Audit, ['admin', 'direção']);
+      case 'stock': return guard(Inventory, ['staff', 'secretaria', 'coordenador'], 'stock');
+      case 'audit-logs': return guard(Audit, ['admin', 'direção'], 'audit');
       case 'polos':
-      case 'units': return guard(Polos, ['staff', 'secretaria', 'coordenador']);
-      case 'users': return guard(AppUsers, ['admin', 'direção']);
+      case 'units': return guard(Polos, ['staff', 'secretaria', 'coordenador'], 'units');
+      case 'users': return guard(AppUsers, ['admin', 'direção'], 'users');
       case 'staff':
-      case 'employees': return guard(Employees, ['admin', 'direção']);
-      case 'grades-entry': return guard(GradesEntry, ['staff', 'secretaria', 'coordenador']);
-      case 'reports': return guard(Reports, ['staff', 'secretaria', 'coordenador']);
-      case 'calendar': return guard(SchoolCalendar, ['staff', 'secretaria', 'coordenador']);
-      case 'cash-management': return guard(CashManagement, ['staff', 'secretaria', 'coordenador']);
-      case 'overdue-payments': return guard(OverduePayments, ['staff', 'secretaria', 'coordenador']);
-      case 'staff-portal': return guard(StaffPortal, ['staff', 'secretaria', 'coordenador']);
-      case 'student-portal': return guard(StudentPortal, ['staff', 'secretaria', 'coordenador']);
-      case 'trash': return guard(Audit, ['admin', 'direção']);
+      case 'employees': return guard(Employees, ['admin', 'direção'], 'staff');
+      case 'grades-entry': return guard(GradesEntry, ['staff', 'secretaria', 'coordenador'], 'grades');
+      case 'reports': return guard(Reports, ['staff', 'secretaria', 'coordenador'], 'reports');
+      case 'calendar': return guard(SchoolCalendar, ['staff', 'secretaria', 'coordenador'], 'calendar');
+      case 'cash-management': return guard(CashManagement, ['staff', 'secretaria', 'coordenador'], 'finance');
+      case 'overdue-payments': return guard(OverduePayments, ['staff', 'secretaria', 'coordenador'], 'finance');
+      case 'staff-portal': return guard(StaffPortal, ['staff', 'secretaria', 'coordenador'], 'staff-portal');
+      case 'student-portal': return guard(StudentPortal, ['staff', 'secretaria', 'coordenador'], 'student-portal');
+      case 'trash': return guard(Audit, ['admin', 'direção'], 'trash');
       default: return <Dashboard />;
     }
   }, [profile]);

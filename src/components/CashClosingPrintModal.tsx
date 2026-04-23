@@ -15,64 +15,76 @@ interface CashClosingPrintModalProps {
 }
 
 export const CashClosingPrintModal: React.FC<CashClosingPrintModalProps> = ({ isOpen, onClose }) => {
-  const { systemConfig, profile, nucleo } = useAuth();
+  const { systemConfig, profile, nucleo, user } = useAuth();
   const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().substring(0, 7)); // Default to current month YYYY-MM
   const [filterType, setFilterType] = useState<'MONTH' | 'DATE'>('MONTH');
   
   const [transactions, setTransactions] = useState<any[]>([]);
   const [installments, setInstallments] = useState<any[]>([]);
+  const [previousBalance, setPreviousBalance] = useState(0);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && nucleo && user) {
       fetchReportData();
     }
-  }, [isOpen, filterDate, filterType]);
+  }, [isOpen, filterDate, filterType, nucleo, user]);
 
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch transactions (from CashManagement/Finance)
-      // Usually date is stored as "YYYY-MM-DD"
       const datePrefix = filterType === 'MONTH' ? filterDate.substring(0, 7) : filterDate;
-      
-      const qFinance = query(
-        collection(db, 'transactions'),
-        where('nucleoId', '==', nucleo)
-      );
+      const isBeforePeriod = (d: string) => d && (filterType === 'MONTH' ? d.substring(0, 7) < datePrefix : d < datePrefix);
+      const isInPeriod = (d: string) => d && d.startsWith(datePrefix);
+
+      // Base constraints
+      const baseConstraints = [where('nucleoId', '==', nucleo)];
+      if (profile?.poloId) {
+         baseConstraints.push(where('poloId', '==', profile.poloId));
+      }
+
+      const qFinance = query(collection(db, 'transactions'), ...baseConstraints);
       const snapFinance = await getDocs(qFinance);
-      const allTransactions = snapFinance.docs
-        .map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Administrativo' }))
-        .filter((t: any) => t.date && t.date.startsWith(datePrefix));
+      const allTransactions = snapFinance.docs.map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Administrativo' }));
 
-      const qSchoolCash = query(collection(db, 'school_cash'));
-      const snapSchoolCash = await getDocs(qSchoolCash);
-      const allSchoolCash = snapSchoolCash.docs
-        .map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Escola' }))
-        .filter((t: any) => t.date && t.date.startsWith(datePrefix));
-        
-      const qSnackCash = query(collection(db, 'snack_cash'));
-      const snapSnackCash = await getDocs(qSnackCash);
-      const allSnackCash = snapSnackCash.docs
-        .map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Cantina' }))
-        .filter((t: any) => t.date && t.date.startsWith(datePrefix));
+      const docSchoolList = await getDocs(query(collection(db, 'school_cash'), ...baseConstraints));
+      const allSchoolCash = docSchoolList.docs.map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Escola' }));
 
-      // 2. Fetch financial installments (Mensalidades)
-      const qInstallments = query(
-        collection(db, 'financial_installments'),
-        where('status', '==', 'Pago')
-      );
+      const docSnackList = await getDocs(query(collection(db, 'snack_cash'), ...baseConstraints));
+      const allSnackCash = docSnackList.docs.map(doc => ({ id: doc.id, ...doc.data(), source: 'Caixa Cantina' }));
+
+      const qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), ...baseConstraints);
       const snapInstallments = await getDocs(qInstallments);
-      const allInstallments = snapInstallments.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((t: any) => t.paymentDate && t.paymentDate.startsWith(datePrefix));
-        
-      // Sort
-      const combinedTrans = [...allTransactions, ...allSchoolCash, ...allSnackCash].sort((a: any,b: any) => a.date?.localeCompare(b.date));
-      const combinedInst = [...allInstallments].sort((a: any,b: any) => a.paymentDate?.localeCompare(b.paymentDate));
+      const allInstallments = snapInstallments.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as any));
 
-      setTransactions(combinedTrans);
-      setInstallments(combinedInst);
+      // Split into current period vs previous period
+      let prevBal = 0;
+      
+      const calcCashPrev = (list: any[]) => {
+        list.forEach(t => {
+          if (isBeforePeriod(t.date)) {
+             if (t.type === 'ENTRY' || t.amount > 0) prevBal += Number(t.amount || 0);
+             if (t.type === 'WITHDRAWAL' || t.amount < 0) prevBal -= Number(Math.abs(t.amount || 0));
+          }
+        });
+      };
+      calcCashPrev(allTransactions);
+      calcCashPrev(allSchoolCash);
+      calcCashPrev(allSnackCash);
+
+      allInstallments.forEach(t => {
+        if (isBeforePeriod(t.paymentDate)) {
+          prevBal += Number(t.finalPaidValue || 0);
+        }
+      });
+
+      setPreviousBalance(prevBal);
+
+      const transInPeriod = [...allTransactions, ...allSchoolCash, ...allSnackCash].filter((t: any) => isInPeriod(t.date)).sort((a: any, b: any) => a.date?.localeCompare(b.date));
+      const instInPeriod = allInstallments.filter((t: any) => isInPeriod(t.paymentDate)).sort((a: any, b: any) => a.paymentDate?.localeCompare(b.paymentDate));
+
+      setTransactions(transInPeriod);
+      setInstallments(instInPeriod);
     } catch (e) {
       console.error(e);
     } finally {
@@ -95,6 +107,8 @@ export const CashClosingPrintModal: React.FC<CashClosingPrintModalProps> = ({ is
   const withdrawalsCount = transactions.filter(t => t.type === 'WITHDRAWAL' || t.amount < 0).reduce((acc, curr) => acc + Number(Math.abs(curr.amount || 0)), 0);
 
   const displayDate = filterType === 'MONTH' ? `${filterDate.split('-')[1]}/${filterDate.split('-')[0]}` : filterDate.split('-').reverse().join('/');
+  
+  const saldoFinal = previousBalance + totalInstallments + entriesCount - withdrawalsCount;
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center pt-8 print:p-0 print-overlay-container">
@@ -169,26 +183,32 @@ export const CashClosingPrintModal: React.FC<CashClosingPrintModalProps> = ({ is
                  <p className="text-sm font-bold uppercase tracking-widest text-slate-500">Período de Referência: {displayDate}</p>
                </div>
 
-               <div className="grid grid-cols-5 gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-200">
+               <div className="grid grid-cols-6 gap-3 p-6 bg-slate-50 rounded-2xl border border-slate-200">
                   <div className="space-y-1">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Bruto Mensalidades</p>
-                    <p className="text-lg font-black text-slate-600">R$ {installments.reduce((acc, curr) => acc + (Number(curr.baseValue) || 0), 0).toFixed(2)}</p>
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Saldo Anterior</p>
+                    <p className="text-lg font-black text-slate-600">R$ {previousBalance.toFixed(2)}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Descontos</p>
-                    <p className="text-lg font-black text-amber-600">R$ {totalDiscounts.toFixed(2)}</p>
-                  </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 border-l border-slate-200 pl-3">
                     <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Mensalidades Líquido</p>
-                    <p className="text-lg font-black text-navy">R$ {totalInstallments.toFixed(2)}</p>
+                    <p className="text-lg font-black text-emerald-600">+ R$ {totalInstallments.toFixed(2)}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Outras Movimentações</p>
-                    <p className="text-lg font-black text-emerald-600">R$ {(entriesCount - withdrawalsCount).toFixed(2)}</p>
+                  <div className="space-y-1 border-l border-slate-200 pl-3">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Entradas (Avulsas)</p>
+                    <p className="text-lg font-black text-emerald-600">+ R$ {entriesCount.toFixed(2)}</p>
                   </div>
-                  <div className="space-y-1 border-l border-slate-200 pl-4">
+                  <div className="space-y-1 border-l border-slate-200 pl-3">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Saídas</p>
+                    <p className="text-lg font-black text-red-600">- R$ {withdrawalsCount.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-1 border-l border-slate-200 pl-3">
+                    <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest leading-none">Resultado do Mês</p>
+                    <p className={cn("text-lg font-black", (totalInstallments + entriesCount - withdrawalsCount) >= 0 ? "text-petrol" : "text-red-500")}>
+                      R$ {(totalInstallments + entriesCount - withdrawalsCount).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="space-y-1 border-l-2 border-slate-300 pl-3 bg-white p-2 -my-2 rounded-lg shadow-sm">
                     <p className="text-[9px] font-black uppercase text-slate-700 tracking-widest underline">Saldo Final Período</p>
-                    <p className="text-xl font-black text-petrol">R$ {(totalInstallments + (entriesCount - withdrawalsCount)).toFixed(2)}</p>
+                    <p className="text-xl font-black text-navy leading-none mt-1">R$ {saldoFinal.toFixed(2)}</p>
                   </div>
                </div>
 

@@ -582,13 +582,13 @@ __________________________________________
   };
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-start justify-center pt-8 print:p-0 print:block print:bg-white print:static print-overlay-container">
+    <div id="print-overlay-container" className="fixed inset-0 z-[500] flex items-start justify-center pt-8 print:p-0 print:block print:bg-white print:static">
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           body, html { background: white !important; height: auto !important; overflow: visible !important; }
           body * { visibility: hidden !important; }
-          .print-overlay-container, .print-overlay-container * { visibility: visible !important; }
-          .print-overlay-container { 
+          #print-overlay-container, #print-overlay-container * { visibility: visible !important; }
+          #print-overlay-container { 
             position: absolute !important; 
             left: 0 !important; 
             top: 0 !important; 
@@ -597,6 +597,10 @@ __________________________________________
             padding: 0 !important; 
             background: white !important;
             display: block !important;
+          }
+          #print-overlay-container div {
+            overflow: visible !important;
+            max-height: none !important;
           }
           .no-print, button, [role="tablist"], nav, aside { display: none !important; }
           #printable-document { 

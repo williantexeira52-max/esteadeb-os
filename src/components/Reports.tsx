@@ -53,6 +53,8 @@ interface Student {
   birthState?: string;
   filiation?: string;
   completionYear?: string;
+  address?: string;
+  phone?: string;
 }
 
 interface Class {
@@ -172,6 +174,7 @@ export const Reports: React.FC = () => {
   const generateDocument = () => {
     switch (selectedDocument) {
       case 'matricula': generateDeclaracaoMatricula(); break;
+      case 'requerimentoMatricula': generateRequerimentoMatricula(); break;
       case 'tcc': generateAutorizacaoTcc(); break;
       case 'nadaConsta': generateNadaConsta(); break;
       case 'conclusao': generateConclusao(); break;
@@ -297,6 +300,81 @@ export const Reports: React.FC = () => {
             <p className="text-[10px] font-black text-navy uppercase tracking-widest">ESTEADEB – Escola Teológica das Assembleias de Deus no Brasil</p>
             <p className="text-[9px] text-slate-400 font-bold">R. Dr. Célso Ramalho, 70 - Lagoa Seca, Natal - RN, 59022-330</p>
             <p className="text-[9px] text-slate-400 font-bold">Tel.: (84) 2030-4038 | E-mail: secretaria@esteadeb.org.br</p>
+          </div>
+        </div>
+      )
+    });
+    setIsPrintModalOpen(true);
+  };
+
+  const generateRequerimentoMatricula = () => {
+    const student = students.find(s => s.id === selectedStudentId);
+    if (!student) return;
+
+    const sig = getSignatureData('matricula');
+
+    setPrintContent({
+      title: 'Requerimento de Matrícula',
+      html: (
+        <div className="p-16 space-y-12 text-slate-800 font-serif max-w-4xl mx-auto bg-white relative min-h-[1100px]">
+          <div className="relative flex items-center justify-center min-h-[120px] mb-8 w-full border-b pb-8 border-slate-200">
+            <div className="absolute left-0 top-0">
+              {systemConfig?.logoUrl ? (
+                <img src={systemConfig.logoUrl} alt="Logo" className="h-28 w-auto object-contain" referrerPolicy="no-referrer" />
+              ) : (
+                <GraduationCap size={48} className="text-navy" />
+              )}
+            </div>
+            <div className="text-center space-y-1">
+              <h1 className="text-5xl font-black text-navy uppercase leading-none">{systemConfig?.schoolName || 'ESTEADEB'}</h1>
+              <p className="text-sm font-bold uppercase tracking-[0.4em] text-slate-500 mt-2">Requerimento de Matrícula</p>
+            </div>
+          </div>
+          
+          <div className="text-justify leading-relaxed space-y-8 text-lg px-8">
+            <p>
+              À Direção da <strong>{systemConfig?.schoolName || 'ESTEADEB'}</strong>,
+            </p>
+            <p>
+              Eu, <strong>{student.name.toUpperCase()}</strong>, portador(a) do CPF nº <strong>{student.cpf || '000.000.000-00'}</strong>, 
+              residente e domiciliado(a) em <strong>{student.address || '_________________'}</strong>, 
+              venho por meio deste requerer minha <strong>MATRÍCULA</strong> no curso de 
+              <strong> {student.course?.toUpperCase() || 'TEOLOGIA'}</strong>, no semestre letivo corrente de <strong>{new Date().getFullYear()}</strong>.
+            </p>
+            <p>
+              Assumo o compromisso de cumprir as normas estatutárias e regimentais desta instituição de ensino, 
+              bem como de honrar com os compromissos financeiros assumidos no ato desta matrícula.
+            </p>
+            <p>
+              Pede Deferimento.
+            </p>
+          </div>
+
+          <div className="pt-24 text-center space-y-24">
+            <p className="font-bold">Natal/RN, {new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}.</p>
+            
+            <div className="grid grid-cols-2 gap-12">
+              <div className="flex flex-col items-center">
+                <div className="w-full border-t border-slate-900 pt-4">
+                  <p className="font-black uppercase text-sm">{student.name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Assinatura do Requerente</p>
+                </div>
+              </div>
+              <div className="flex flex-col items-center justify-end">
+                <div className="w-full border-t border-slate-900 pt-4 relative">
+                  {sig.url && (
+                    <img src={sig.url} alt="Assinatura" className="absolute -top-16 left-1/2 -translate-x-1/2 h-20 object-contain mix-blend-multiply" />
+                  )}
+                  <p className="font-black uppercase text-sm tracking-widest">{sig.name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{sig.role}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute bottom-8 left-0 right-0 text-center space-y-1 border-t border-slate-100 pt-4">
+            <p className="text-[10px] font-black text-navy uppercase tracking-widest">{systemConfig?.schoolName || 'ESTEADEB'}</p>
+            <p className="text-[9px] text-slate-400 font-bold">{systemConfig?.address || 'R. Dr. Célso Ramalho, 70 - Lagoa Seca, Natal - RN'}</p>
           </div>
         </div>
       )
@@ -1339,7 +1417,7 @@ export const Reports: React.FC = () => {
     <div className="p-8 space-y-12 animate-in fade-in duration-500 bg-slate-50 min-h-screen">
       {/* Print Modal Overlay */}
       {isPrintModalOpen && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none">
+        <div id="print-modal-container" className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none print:static">
           <div className="w-full max-w-5xl flex justify-between items-center mb-6 print:hidden">
             <div className="flex items-center gap-3 text-white">
               <div className="p-2 bg-petrol rounded-xl">
@@ -1357,9 +1435,9 @@ export const Reports: React.FC = () => {
             </div>
           </div>
           
-          <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[2rem] overflow-hidden print:shadow-none print:rounded-none flex flex-col max-h-[90vh]">
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-              <div className="scale-[0.9] lg:scale-100 origin-top transform-gpu">
+          <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[2rem] overflow-hidden print:shadow-none print:rounded-none flex flex-col max-h-[90vh] print:max-h-none print:h-auto">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar print:overflow-visible print:p-0">
+              <div className="scale-[0.9] lg:scale-100 origin-top transform-gpu print:scale-100 print:transform-none">
                 {printContent?.html}
               </div>
             </div>
@@ -1424,6 +1502,7 @@ export const Reports: React.FC = () => {
                   >
                     <option value="">Selecione o Documento</option>
                     <option value="matricula">Declaração de Matrícula</option>
+                    <option value="requerimentoMatricula">Requerimento de Matrícula</option>
                     <option value="desconto">Requerimento de Desconto</option>
                     <option value="contrato">Contrato de Prestação de Serviços</option>
                     <option value="tcc">Autorização Orientação TCC</option>
@@ -1599,37 +1678,26 @@ export const Reports: React.FC = () => {
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
-          .fixed.inset-0, .fixed.inset-0 * {
-            visibility: visible;
+          #print-modal-container, #print-modal-container * {
+            visibility: visible !important;
           }
-          .fixed.inset-0 {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: auto;
+          #print-modal-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
             background: white !important;
             padding: 0 !important;
             margin: 0 !important;
             overflow: visible !important;
+            display: block !important;
           }
-          .fixed.inset-0 div {
+          #print-modal-container div {
             overflow: visible !important;
             max-height: none !important;
-          }
-          .fixed.inset-0 .scale-\[0\.9\] {
-            transform: none !important;
-          }
-          .print\\:hidden {
-            display: none !important;
-          }
-          .shadow-2xl {
-            box-shadow: none !important;
-          }
-          .rounded-\\[2rem\\] {
-            border-radius: 0 !important;
           }
         }
       `}} />
