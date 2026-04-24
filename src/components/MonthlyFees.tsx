@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { doc, onSnapshot, query, collection, where, orderBy, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { doc, onSnapshot, query, collection, where, orderBy, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -70,6 +70,8 @@ export const MonthlyFees: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [monthFilter, setMonthFilter] = useState(''); // Format: YYYY-MM
   const [isBatchDateModalOpen, setIsBatchDateModalOpen] = useState(false);
+  const [isReceiptReportOpen, setIsReceiptReportOpen] = useState(false);
+  const [reportMonthFilter, setReportMonthFilter] = useState(new Date().toISOString().substring(0, 7));
   const [batchDueDate, setBatchDueDate] = useState(new Date().toISOString().split('T')[0]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -167,22 +169,18 @@ export const MonthlyFees: React.FC = () => {
       setStudents(uniqueStudents);
     });
 
-    const qPlans = query(
-      collection(db, 'financial_plans'), 
-      where('nucleoId', '==', nucleo),
-      orderBy('name', 'asc')
-    );
+    const qPlans = query(collection(db, 'financial_plans'), orderBy('name', 'asc'));
     const unsubscribePlans = onSnapshot(qPlans, (snapshot) => {
-      setPlans(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const plansList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const filtered = plansList.filter((p: any) => !p.nucleoId || p.nucleoId === nucleo || p.nucleoId === 'PRESENCIAL');
+      setPlans(filtered);
     });
 
-    const qDiscounts = query(
-      collection(db, 'financial_discounts'), 
-      where('nucleoId', '==', nucleo),
-      orderBy('name', 'asc')
-    );
+    const qDiscounts = query(collection(db, 'financial_discounts'), orderBy('name', 'asc'));
     const unsubscribeDiscounts = onSnapshot(qDiscounts, (snapshot) => {
-      setDiscounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const discountsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const filtered = discountsList.filter((d: any) => !d.nucleoId || d.nucleoId === nucleo || d.nucleoId === 'PRESENCIAL');
+      setDiscounts(filtered);
     });
 
     return () => {
@@ -318,13 +316,43 @@ export const MonthlyFees: React.FC = () => {
     win.document.close();
   };
 
-  const handleWhatsApp = (inst: Installment) => {
+  const handleWhatsApp = async (inst: Installment) => {
     const { total, isLate, daysOverdue } = calculatePenalties(inst);
-    const message = isLate 
-      ? `Olá, ${inst.studentName}! Notamos um atraso de ${daysOverdue} dias em sua mensalidade de ${new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}. O valor atualizado é ${formatCurrency(total)}. Vamos regularizar?`
-      : `Olá, ${inst.studentName}! Segue o lembrete de sua mensalidade com vencimento em ${new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}. Valor: ${formatCurrency(total)}.`;
+    let template = isLate 
+      ? 'Olá, [NOME_DO_ALUNO]! Notamos um atraso de ' + daysOverdue + ' dias em sua mensalidade com vencimento em [VENCIMENTO]. O valor atualizado é [VALOR]. Vamos regularizar?'
+      : 'Olá, [NOME_DO_ALUNO]! Segue o lembrete de sua mensalidade com vencimento em [VENCIMENTO]. Valor: [VALOR].';
+
+    try {
+      const settingsDocRef = doc(db, 'settings', `financial_hub_${nucleo || 'default'}`);
+      const docSnap = await getDoc(settingsDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.messageTemplates) {
+           template = isLate ? (data.messageTemplates.late || template) : (data.messageTemplates.dueSoon || template);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch settings", e);
+    }
+      
+    const dueDateFormatted = new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR');
     
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    let parsedMessage = template
+      .replace(/\[NOME_DO_ALUNO\]/g, inst.studentName)
+      .replace(/\[VENCIMENTO\]/g, dueDateFormatted)
+      .replace(/\[VALOR\]/g, formatCurrency(total));
+
+    const communicationMsg = `${inst.status === 'Late' ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    try {
+      await updateDoc(doc(db, 'financial_installments', inst.id), {
+        lastCommunication: communicationMsg
+      });
+    } catch (e) {
+      console.warn("Could not log communication:", e);
+    }
+    
+    window.open(`https://wa.me/?text=${encodeURIComponent(parsedMessage)}`, '_blank');
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -560,6 +588,88 @@ export const MonthlyFees: React.FC = () => {
       addToast('Erro ao atualizar vencimentos em lote.', 'error');
     } finally {
       setIsBulkDeleting(false);
+    }
+  };
+
+  const handleMassBilling = async () => {
+    if (selectedIds.length === 0) {
+      addToast('Selecione pelo menos uma mensalidade para enviar cobrança.', 'error');
+      return;
+    }
+
+    let defaultTemplates = {
+      late: 'Olá, [NOME_DO_ALUNO]! Notamos que sua mensalidade com vencimento em [VENCIMENTO] encontra-se em aberto. O valor base é de [VALOR]. Por favor, entre em contato para regularizar sua situação ou desconsidere caso já tenha efetuado o pagamento. Atenciosamente.',
+      dueSoon: 'Olá, [NOME_DO_ALUNO]! Gostaríamos de lembrar que o vencimento da sua mensalidade será no dia [VENCIMENTO]. O valor base é de [VALOR]. Caso já tenha efetuado o pagamento, por favor desconsidere esta mensagem. Atenciosamente.'
+    };
+    let whatsappApi = { mode: 'web', apiUrl: '', apiToken: '' };
+
+    try {
+      const settingsDocRef = doc(db, 'settings', `financial_hub_${nucleo || 'default'}`);
+      const docSnap = await getDoc(settingsDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.messageTemplates) defaultTemplates = { ...defaultTemplates, ...data.messageTemplates };
+        if (data.whatsappApi) whatsappApi = { ...whatsappApi, ...data.whatsappApi };
+      }
+    } catch (e) {
+      console.warn("Could not fetch settings", e);
+    }
+
+    const selectedInstallments = installments.filter(inst => selectedIds.includes(inst.id));
+
+    let apiSentCount = 0;
+
+    for (const inst of selectedInstallments) {
+      if (inst.studentPhone) {
+        const cleanPhone = inst.studentPhone.replace(/\D/g, '');
+        if (cleanPhone) {
+          const dueDateFormatted = new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR');
+          
+          let rawMessage = inst.status === 'Late' ? defaultTemplates.late : defaultTemplates.dueSoon;
+          
+          let parsedMessage = rawMessage
+            .replace(/\[NOME_DO_ALUNO\]/g, inst.studentName)
+            .replace(/\[VENCIMENTO\]/g, dueDateFormatted)
+            .replace(/\[VALOR\]/g, formatCurrency(inst.baseValue));
+
+          const communicationMsg = `${inst.status === 'Late' ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+          try {
+            await updateDoc(doc(db, 'financial_installments', inst.id), {
+              lastCommunication: communicationMsg
+            });
+          } catch (e) {
+            console.warn("Could not log communication:", e);
+          }
+
+          if (whatsappApi.mode === 'api' && whatsappApi.apiUrl) {
+            // Disparo via API em background
+            try {
+              await fetch(whatsappApi.apiUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(whatsappApi.apiToken ? { 'Authorization': `Bearer ${whatsappApi.apiToken}` } : {})
+                },
+                body: JSON.stringify({
+                  number: '55' + cleanPhone,
+                  text: parsedMessage
+                })
+              });
+              apiSentCount++;
+            } catch (err) {
+              console.error("Erro disparando API WhatsApp para " + cleanPhone, err);
+            }
+          } else {
+            // Web / Abre as abas
+            window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(parsedMessage)}`, '_blank');
+          }
+        }
+      }
+    }
+
+    if (apiSentCount > 0) {
+      addToast(`${apiSentCount} mensagens enviadas via API!`, 'success');
     }
   };
 
@@ -853,6 +963,125 @@ export const MonthlyFees: React.FC = () => {
         </div>
       )}
 
+      {/* Relatório de Mensalidades Recebidas */}
+      {isReceiptReportOpen && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none print:static print-overlay-container">
+          <div className="w-full max-w-5xl flex justify-between items-center mb-6 print:hidden">
+            <div className="flex items-center gap-3 text-white">
+              <div className="p-2 bg-petrol rounded-xl">
+                <Printer size={20} />
+              </div>
+              <h2 className="text-xl font-black uppercase tracking-tight">Relatório de Recebimentos</h2>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={() => window.print()} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-2 px-6">
+                <Printer size={16} /> Imprimir Relatório
+              </Button>
+              <Button onClick={() => setIsReceiptReportOpen(false)} variant="ghost" className="text-white hover:bg-white/10 rounded-full p-2">
+                <X size={24} />
+              </Button>
+            </div>
+          </div>
+          
+          <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[2rem] overflow-hidden print:shadow-none print:rounded-none flex flex-col max-h-[90vh] print:max-h-none print:h-auto">
+            <div className="p-6 border-b print:hidden flex gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black tracking-widest text-slate-400 uppercase">Mês do Recebimento (Baixa)</label>
+                <Input 
+                  type="month"
+                  value={reportMonthFilter}
+                  onChange={(e) => setReportMonthFilter(e.target.value)}
+                  className="font-bold text-slate-700 h-12 rounded-xl border-2 border-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar print:overflow-visible print:p-0">
+              <div className="space-y-8">
+                <div className="text-center space-y-2 border-b border-slate-100 pb-8">
+                  <h1 className="text-2xl font-black text-navy uppercase tracking-tighter">Relatório de Recebimentos / Mensalidades</h1>
+                  <p className="font-bold tracking-widest text-slate-500 uppercase">
+                    Competência (Baixa): <span className="text-petrol">{reportMonthFilter.split('-').reverse().join('/')}</span>
+                  </p>
+                </div>
+
+                {(() => {
+                  const paidInMonth = installments.filter(i => i.status === 'Pago' && i.paymentDate?.startsWith(reportMonthFilter));
+                  const totalPix = paidInMonth.filter(i => i.paymentMethod === 'Pix').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalDinheiro = paidInMonth.filter(i => i.paymentMethod === 'Dinheiro').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalCartao = paidInMonth.filter(i => i.paymentMethod === 'Cartão' || i.paymentMethod === 'Cartão Crédito').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalGeral = paidInMonth.reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+
+                  return (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-4 gap-4 break-inside-avoid">
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Total PIX</p>
+                          <p className="text-lg font-black text-teal-600 mt-1">{formatCurrency(totalPix)}</p>
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Total Dinheiro</p>
+                          <p className="text-lg font-black text-emerald-600 mt-1">{formatCurrency(totalDinheiro)}</p>
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Total Cartão</p>
+                          <p className="text-lg font-black text-indigo-600 mt-1">{formatCurrency(totalCartao)}</p>
+                        </div>
+                        <div className="p-4 bg-navy rounded-2xl text-white shadow-lg">
+                          <p className="text-[10px] font-black uppercase text-white/50 tracking-widest">Total Geral</p>
+                          <p className="text-xl font-black mt-1">{formatCurrency(totalGeral)}</p>
+                        </div>
+                      </div>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-slate-50 hover:bg-slate-50 border-y border-slate-100">
+                            <TableHead className="font-black text-slate-500 uppercase text-[10px] tracking-widest h-10">Data Baixa</TableHead>
+                            <TableHead className="font-black text-slate-500 uppercase text-[10px] tracking-widest h-10">Aluno</TableHead>
+                            <TableHead className="font-black text-slate-500 uppercase text-[10px] tracking-widest text-center h-10">Ref.</TableHead>
+                            <TableHead className="font-black text-slate-500 uppercase text-[10px] tracking-widest text-center h-10">Método</TableHead>
+                            <TableHead className="font-black text-slate-500 uppercase text-[10px] tracking-widest text-right h-10">Valor Líquido</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paidInMonth.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center py-8 text-slate-400 italic">
+                                Nenhum recebimento encontrado.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            paidInMonth
+                              .sort((a, b) => (a.paymentDate || '').localeCompare(b.paymentDate || ''))
+                              .map(inst => (
+                              <TableRow key={inst.id} className="print:border-b border-b border-slate-50 h-8">
+                                <TableCell className="font-medium text-xs">{inst.paymentDate?.split('-').reverse().join('/')}</TableCell>
+                                <TableCell className="font-bold uppercase text-slate-700 text-xs">{inst.studentName}</TableCell>
+                                <TableCell className="text-center text-slate-400 text-[10px]">{inst.dueDate?.split('-').reverse().join('/')}</TableCell>
+                                <TableCell className="text-center">
+                                  <Badge className={cn(
+                                    "border-none uppercase text-[9px] font-black print:p-0",
+                                    inst.paymentMethod === 'Pix' ? "bg-teal-50 text-teal-700" :
+                                    inst.paymentMethod === 'Dinheiro' ? "bg-emerald-50 text-emerald-700" : "bg-indigo-50 text-indigo-700"
+                                  )}>
+                                    {inst.paymentMethod || '--'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right font-black text-navy text-xs">{formatCurrency(inst.finalPaidValue || 0)}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-navy tracking-tighter uppercase">Gestão de Mensalidades</h1>
@@ -873,6 +1102,13 @@ export const MonthlyFees: React.FC = () => {
               { key: 'status', label: 'Status' }
             ]}
           />
+          <Button 
+            onClick={() => setIsReceiptReportOpen(true)}
+            variant="outline"
+            className="border-2 border-slate-200 text-slate-600 hover:text-navy hover:border-navy hover:bg-slate-50 px-6 py-6 rounded-2xl font-black uppercase tracking-widest flex items-center gap-3"
+          >
+            <Printer size={20} /> Recebimentos
+          </Button>
           <Button 
             onClick={() => setIsAddModalOpen(true)}
             className="bg-petrol hover:bg-petrol-dark text-white px-8 py-6 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-petrol/20 flex items-center gap-3"
@@ -917,6 +1153,14 @@ export const MonthlyFees: React.FC = () => {
             <Badge className="bg-petrol text-white px-3 py-1 rounded-full font-bold">
               {selectedIds.length} selecionados
             </Badge>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={handleMassBilling}
+              className="h-10 border-slate-200 text-slate-600 font-bold text-xs uppercase"
+            >
+              Cobrar via WhatsApp
+            </Button>
             <Button 
               size="sm" 
               variant="outline"
@@ -1003,13 +1247,20 @@ export const MonthlyFees: React.FC = () => {
                       {isLate && inst.status !== 'Pago' && <p className="text-[9px] font-black text-red-400 uppercase tracking-widest">Com Juros/Multa</p>}
                     </TableCell>
                     <TableCell className="p-6 text-center">
-                      <Badge className={cn(
-                        "font-black text-[10px] uppercase px-4 py-1.5 rounded-full border-none shadow-sm",
-                        inst.status === 'Pago' ? "bg-emerald-100 text-emerald-700" :
-                        isLate ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
-                      )}>
-                        {inst.status === 'Pago' ? 'Pago' : isLate ? 'Atrasado' : 'Pendente'}
-                      </Badge>
+                      <div className="flex flex-col items-center gap-2">
+                        <Badge className={cn(
+                          "font-black text-[10px] uppercase px-4 py-1.5 rounded-full border-none shadow-sm w-fit",
+                          inst.status === 'Pago' ? "bg-emerald-100 text-emerald-700" :
+                          isLate ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                        )}>
+                          {inst.status === 'Pago' ? 'Pago' : isLate ? 'Atrasado' : 'Pendente'}
+                        </Badge>
+                        {(inst as any).lastCommunication && (
+                           <Badge variant="outline" className="text-[8px] font-bold bg-slate-50 border-slate-200 text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis px-2 py-0.5">
+                             {(inst as any).lastCommunication}
+                           </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="p-6 text-right">
                       <div className="flex items-center justify-end gap-2">

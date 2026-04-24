@@ -280,6 +280,14 @@
     visibility: visible !important;
   }
 
+  /* Prevent massive logos in print views */
+  img[alt="Logo"] {
+    max-height: 100px !important;
+    max-width: 250px !important;
+    height: auto !important;
+    width: auto !important;
+  }
+
   /* Table styling for clarity */
   table {
     border-collapse: collapse !important;

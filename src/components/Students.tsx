@@ -127,9 +127,9 @@ export const Students: React.FC = () => {
       const hasPolo = nucleo === 'SEMIPRESENCIAL';
       setNewStudent(prev => ({
         ...prev,
-        modalidade: nucleo,
-        poloId: hasPolo ? (profile?.poloId || prev.poloId) : '',
-        poloName: hasPolo ? (profile?.poloName || prev.poloName) : 'MATRIZ'
+        modalidade: nucleo || 'PRESENCIAL',
+        poloId: hasPolo && profile?.poloId && profile.poloId !== 'none' ? profile.poloId : (hasPolo ? prev.poloId : ''),
+        poloName: hasPolo && profile?.poloName && profile.poloName !== 'MATRIZ' ? profile.poloName : (hasPolo ? prev.poloName : 'MATRIZ')
       }));
     }
   }, [isAddDialogOpen, nucleo, profile]);
@@ -286,51 +286,6 @@ export const Students: React.FC = () => {
       const studentRef = doc(db, 'students', normalizedCpf);
       await setDoc(studentRef, studentData);
       
-      // Motor de Matrícula Inteligente: Geração de Parcelas (12 meses)
-      const startDate = new Date();
-      for (let i = 1; i <= 12; i++) {
-        let installmentMonth = startDate.getMonth() + i;
-        let installmentYear = startDate.getFullYear();
-        
-        // Ajuste de ano/mês
-        while (installmentMonth > 11) {
-          installmentMonth -= 12;
-          installmentYear += 1;
-        }
-
-        let dueDay = 10; // Default
-        if (newStudent.dueDayPattern === '5_UTIL') {
-          dueDay = getFifthBusinessDay(installmentYear, installmentMonth);
-        } else if (newStudent.dueDayPattern === '20') {
-          dueDay = 20;
-        } else {
-          dueDay = 10;
-        }
-
-        const dueDate = new Date(installmentYear, installmentMonth, dueDay);
-
-        await addDoc(collection(db, 'financial_installments'), {
-          studentId: studentRef.id,
-          studentName: newStudent.name,
-          studentPhone: newStudent.phone || '',
-          studentEmail: newStudent.email || '',
-          matricula: matricula,
-          nucleoId: nucleo,
-          poloId: newStudent.poloId || null,
-          poloName: newStudent.poloName || 'MATRIZ',
-          parcelNumber: i,
-          totalParcels: 12,
-          baseValue: Number(newStudent.valorIntegral) || 206.00,
-          discount: (Number(newStudent.valorIntegral) || 206.00) - (Number(newStudent.valorComDesconto) || 206.00),
-          finalPaidValue: Number(newStudent.valorComDesconto) || 206.00,
-          nomeDesconto: newStudent.nomeDesconto || 'DESCONTO PADRÃO',
-          dueDate: dueDate.toISOString().split('T')[0],
-          status: 'Pendente',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-      }
-
       // Log action
       await logAction(profile?.uid || user?.uid || 'system', 'Matrícula Realizada', `Aluno ${newStudent.name} matriculado com ID ${matricula}`);
 

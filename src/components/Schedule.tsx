@@ -82,6 +82,7 @@ export const Schedule: React.FC = () => {
   const [toasts, setToasts] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
+    classIds: [] as string[],
     classId: '',
     subjectId: '',
     teacherId: '',
@@ -152,38 +153,71 @@ export const Schedule: React.FC = () => {
   }, [nucleo]);
 
   const filteredSubjects = useMemo(() => {
-    if (!formData.classId) return [];
-    const selectedClass = classes.find(c => c.id === formData.classId);
-    if (!selectedClass) return [];
-    return subjects.filter(s => s.course === selectedClass.courseName);
-  }, [formData.classId, classes, subjects]);
+    // If editing, use classId filter
+    if (editingId && formData.classId) {
+      const selectedClass = classes.find(c => c.id === formData.classId);
+      if (!selectedClass) return subjects;
+      return subjects.filter(s => s.course === selectedClass.courseName);
+    }
+    
+    // If creating, use classIds filter (if any selected)
+    if (!editingId && formData.classIds.length > 0) {
+      const selectedCourses = classes
+        .filter(c => formData.classIds.includes(c.id))
+        .map(c => c.courseName);
+      
+      const uniqueCourses = Array.from(new Set(selectedCourses));
+      return subjects.filter(s => uniqueCourses.includes(s.course));
+    }
+    
+    return subjects;
+  }, [formData.classId, formData.classIds, classes, subjects, editingId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const selectedClass = classes.find(c => c.id === formData.classId);
     const selectedSubject = subjects.find(s => s.id === formData.subjectId);
     const selectedTeacher = teachers.find(t => t.id === formData.teacherId);
 
-    const data = {
-      ...formData,
-      className: selectedClass?.name || '',
+    const baseData = {
+      subjectId: formData.subjectId,
+      teacherId: formData.teacherId,
+      room: formData.room,
+      weekday: formData.weekday,
+      period: formData.period,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
       subjectName: selectedSubject?.name || '',
       teacherName: selectedTeacher?.name ? `Professor(a) ${selectedTeacher.name}` : '',
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      nucleoId: nucleo,
     };
 
     try {
       if (editingId) {
-        await updateDoc(doc(db, 'schedules', editingId), data);
+        const selectedClass = classes.find(c => c.id === formData.classId);
+        await updateDoc(doc(db, 'schedules', editingId), {
+          ...baseData,
+          classId: formData.classId,
+          className: selectedClass?.name || ''
+        });
         addToast('Horário atualizado com sucesso!', 'success');
       } else {
-        await addDoc(collection(db, 'schedules'), {
-          ...data,
-          nucleoId: nucleo,
-          createdAt: serverTimestamp()
-        });
-        addToast('Horário registrado com sucesso!', 'success');
+        if (!formData.classIds || formData.classIds.length === 0) {
+           addToast('Selecione pelo menos uma turma.', 'error');
+           return;
+        }
+        
+        for (const cId of formData.classIds) {
+          const selectedClass = classes.find(c => c.id === cId);
+          await addDoc(collection(db, 'schedules'), {
+            ...baseData,
+            classId: cId,
+            className: selectedClass?.name || '',
+            createdAt: serverTimestamp()
+          });
+        }
+        addToast('Horários registrados com sucesso!', 'success');
       }
       resetForm();
     } catch (error) {
@@ -194,12 +228,13 @@ export const Schedule: React.FC = () => {
 
   const resetForm = () => {
     setFormData({
+      classIds: [],
       classId: '',
       subjectId: '',
       teacherId: '',
       room: '',
       weekday: 'Segunda-feira',
-      period: 'Noite',
+      period: 'Noite' as any,
       startTime: '19:00',
       endTime: '22:00'
     });
@@ -326,18 +361,38 @@ export const Schedule: React.FC = () => {
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Turma</label>
-                  <select 
-                    required
-                    className="w-full h-12 px-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol outline-none transition-all font-bold text-slate-700"
-                    value={formData.classId}
-                    onChange={(e) => setFormData({...formData, classId: e.target.value})}
-                  >
-                    <option value="">Selecione a Turma</option>
-                    {classes.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Turma(s)</label>
+                  {editingId ? (
+                    <select 
+                      required
+                      className="w-full h-12 px-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol outline-none transition-all font-bold text-slate-700"
+                      value={formData.classId}
+                      onChange={(e) => setFormData({...formData, classId: e.target.value})}
+                    >
+                      <option value="">Selecione a Turma</option>
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="w-full h-32 overflow-y-auto p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl space-y-2 relative">
+                      {classes.length === 0 && <span className="text-sm text-slate-400 font-bold">Nenhuma turma cadastrada.</span>}
+                      {classes.map(c => (
+                        <label key={c.id} className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox"
+                            checked={formData.classIds?.includes(c.id) || false}
+                            onChange={(e) => {
+                              if (e.target.checked) setFormData({...formData, classIds: [...(formData.classIds || []), c.id]});
+                              else setFormData({...formData, classIds: formData.classIds.filter(id => id !== c.id)});
+                            }}
+                            className="w-5 h-5 rounded-md border-2 border-slate-300 text-petrol focus:ring-petrol"
+                          />
+                          <span className="font-bold text-slate-700 text-sm group-hover:text-petrol transition-colors">{c.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -347,9 +402,13 @@ export const Schedule: React.FC = () => {
                     className="w-full h-12 px-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol outline-none transition-all font-bold text-slate-700"
                     value={formData.subjectId}
                     onChange={(e) => setFormData({...formData, subjectId: e.target.value})}
-                    disabled={!formData.classId}
+                    disabled={(!editingId && (!formData.classIds || formData.classIds.length === 0)) || (editingId && !formData.classId)}
                   >
-                    <option value="">{formData.classId ? 'Selecione a Disciplina' : 'Selecione uma Turma primeiro'}</option>
+                    <option value="">
+                      {(!editingId && formData.classIds && formData.classIds.length > 0) || (editingId && formData.classId) 
+                        ? 'Selecione a Disciplina' 
+                        : 'Selecione uma Turma primeiro'}
+                    </option>
                     {filteredSubjects.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}

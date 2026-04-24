@@ -1088,7 +1088,10 @@ export const Classes: React.FC = () => {
                     <tr key={cls.id} className="hover:bg-indigo-50/30 transition-all group">
                       <td className="p-6">
                         <p className="font-black text-slate-900 uppercase text-sm tracking-tight">{cls.name}</p>
-                        <p className="text-[10px] text-slate-400 font-mono mt-1">REF: {cls.id.slice(0, 8)}</p>
+                        <p className="text-[9px] text-slate-400 font-mono mt-1 font-bold user-select-all" onClick={(e) => {
+                          navigator.clipboard.writeText(cls.id);
+                          showToast('ID copiado!', 'success');
+                        }} title="Clique para copiar o ID Completo">ID: {cls.id}</p>
                       </td>
                       <td className="p-6">
                         <div className="flex flex-col gap-1">

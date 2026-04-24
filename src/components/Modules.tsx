@@ -45,7 +45,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-interface ModuleHistory {
+  interface ModuleHistory {
   id: string;
   classId: string;
   className: string;
@@ -54,6 +54,9 @@ interface ModuleHistory {
   academicYear: string;
   semester: string;
   subjects: string[];
+  startDate?: string;
+  endDate?: string;
+  professorsNotes?: string;
   createdAt?: any;
 }
 
@@ -74,7 +77,10 @@ export const Modules: React.FC = () => {
     moduleNumber: 1,
     academicYear: new Date().getFullYear().toString(),
     semester: '1º Semestre',
-    subjects: [] as string[]
+    subjects: [] as string[],
+    startDate: '',
+    endDate: '',
+    professorsNotes: ''
   });
 
   const addToast = (title: string, type: 'success' | 'error') => {
@@ -170,7 +176,10 @@ export const Modules: React.FC = () => {
       moduleNumber: 1,
       academicYear: new Date().getFullYear().toString(),
       semester: '1º Semestre',
-      subjects: []
+      subjects: [],
+      startDate: '',
+      endDate: '',
+      professorsNotes: ''
     });
     setEditingId(null);
     setIsModalOpen(false);
@@ -183,7 +192,10 @@ export const Modules: React.FC = () => {
       moduleNumber: mod.moduleNumber,
       academicYear: mod.academicYear,
       semester: mod.semester,
-      subjects: mod.subjects || []
+      subjects: mod.subjects || [],
+      startDate: mod.startDate || '',
+      endDate: mod.endDate || '',
+      professorsNotes: mod.professorsNotes || ''
     });
     setEditingId(mod.id);
     setIsModalOpen(true);
@@ -348,6 +360,35 @@ export const Modules: React.FC = () => {
                     <option value="2º Semestre">2º Semestre</option>
                   </select>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Data Inicial</label>
+                  <Input 
+                    type="date"
+                    className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold text-slate-700"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({...formData, startDate: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Data Final (Previsão)</label>
+                  <Input 
+                    type="date"
+                    className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold text-slate-700"
+                    value={formData.endDate}
+                    onChange={(e) => setFormData({...formData, endDate: e.target.value})}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Professores e Anotações</label>
+                <Input 
+                  className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold text-slate-700 placeholder:opacity-50"
+                  placeholder="Ex: Teologia Básica: Pr. João | História: Pr. Silva"
+                  value={formData.professorsNotes}
+                  onChange={(e) => setFormData({...formData, professorsNotes: e.target.value})}
+                />
               </div>
 
               <div className="space-y-4">
@@ -447,7 +488,10 @@ export const Modules: React.FC = () => {
             { key: 'year', label: 'Ano_Curso' },
             { key: 'moduleNumber', label: 'Modulo', type: 'number' },
             { key: 'academicYear', label: 'Ano_Letivo' },
-            { key: 'semester', label: 'Semestre' }
+            { key: 'semester', label: 'Semestre' },
+            { key: 'startDate', label: 'Data_Inicial' },
+            { key: 'endDate', label: 'Data_Termino' },
+            { key: 'professorsNotes', label: 'Professores' }
           ]}
           templateHeaders={[
             { key: 'classId', label: 'ID_Turma' },
@@ -455,7 +499,10 @@ export const Modules: React.FC = () => {
             { key: 'moduleNumber', label: 'Modulo', type: 'number' },
             { key: 'academicYear', label: 'Ano_Letivo' },
             { key: 'semester', label: 'Semestre' },
-            { key: 'subjects', label: 'Disciplinas' }
+            { key: 'subjects', label: 'Disciplinas' },
+            { key: 'startDate', label: 'Data_Inicial' },
+            { key: 'endDate', label: 'Data_Termino' },
+            { key: 'professorsNotes', label: 'Professores_Anotacoes' }
           ]}
           transformRow={(row) => {
             const selectedClass = classes.find(c => c.id === row.classId);
@@ -517,6 +564,11 @@ export const Modules: React.FC = () => {
                     <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 flex items-center gap-1">
                       <Calendar size={10} /> {mod.academicYear} • {mod.semester}
                     </p>
+                    {(mod.startDate || mod.endDate) && (
+                      <p className="text-[10px] text-slate-500 font-bold mt-1">
+                        {mod.startDate ? mod.startDate.split('-').reverse().join('/') : '--'} até {mod.endDate ? mod.endDate.split('-').reverse().join('/') : '--'}
+                      </p>
+                    )}
                   </td>
                   <td className="p-6">
                     <div className="flex flex-wrap gap-1 max-w-md">
@@ -531,6 +583,11 @@ export const Modules: React.FC = () => {
                         </span>
                       )}
                     </div>
+                    {mod.professorsNotes && (
+                      <p className="text-[9px] text-slate-500 font-medium italic mt-2 w-full max-w-xs block truncate" title={mod.professorsNotes}>
+                         Resp: {mod.professorsNotes}
+                      </p>
+                    )}
                   </td>
                   <td className="p-6 text-right">
                     <div className="flex items-center justify-end gap-2">

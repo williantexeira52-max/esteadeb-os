@@ -31,7 +31,9 @@ export const AdminLogin: React.FC = () => {
       const isCpfCandidate = cleanIdentifier.length === 11 || (cleanIdentifier.length >= 4 && !identifier.includes('@'));
 
       // 1. Map identifier to hidden email (legacy behavior)
-      let mappedEmail = identifier.includes('@') ? identifier.toLowerCase().trim() : `${cleanIdentifier}@esteadeb.com.br`;
+      let mappedEmail = identifier.includes('@') 
+        ? identifier.toLowerCase().trim() 
+        : (cleanIdentifier ? `${cleanIdentifier}@esteadeb.com.br` : `${identifier.toLowerCase().replace(/\s+/g, '')}@esteadeb.com.br`);
       const authPassword = (identifier === '000000' && password === '123456') 
         ? password 
         : (password.length < 6 ? `${password}_admin` : password);
@@ -134,9 +136,11 @@ export const AdminLogin: React.FC = () => {
         loginAdmin(adminData);
       }
     } catch (err: any) {
-      console.error("ADMIN_LOGIN_DEBUG_ERROR:", err);
+      console.log("Login details:", err.code);
       if (err.code === 'auth/operation-not-allowed') {
         setError('O provedor de E-mail/Senha não está ativado no Console do Firebase. Ative-o em Autenticação > Sign-in method.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Formato de usuário/e-mail inválido. Verifique o que foi digitado.');
       } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError('Credenciais inválidas. Verifique seu identificador e senha.');
       } else {

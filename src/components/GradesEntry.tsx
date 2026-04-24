@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 interface StudentGrade {
   studentId: string;
@@ -375,6 +376,66 @@ export const GradesEntry: React.FC = () => {
     }
   };
 
+  const downloadTemplate = () => {
+    if (students.length === 0) {
+      addToast('Selecione uma turma e disciplina com alunos para gerar o modelo.', 'error');
+      return;
+    }
+    const data = students.map(s => ({
+      'ID Aluno (NAO ALTERAR)': s.studentId,
+      'Nome do Aluno': s.studentName,
+      'Nota (0-10)': s.grade,
+      'Faltas': s.absences
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Notas");
+    XLSX.writeFile(workbook, `Modelo_Notas_${filters.classId}.xlsx`);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const wsname = workbook.SheetNames[0];
+        const ws = workbook.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json<any>(ws);
+
+        const updatedStudents = students.map(stu => {
+          const matched = data.find(r => r['ID Aluno (NAO ALTERAR)'] === stu.studentId);
+          if (matched) {
+            const tempGrade = parseFloat(matched['Nota (0-10)']);
+            const grade = isNaN(tempGrade) ? stu.grade : Math.max(0, Math.min(10, tempGrade));
+            const tempAbsences = parseInt(matched['Faltas']);
+            const absences = isNaN(tempAbsences) ? stu.absences : Math.max(0, tempAbsences);
+            
+            const status = (grade >= 7 && absences <= 2) ? 'Aprovado' : 'Reprovado';
+            
+            return {
+              ...stu,
+              grade,
+              absences,
+              status
+            };
+          }
+          return stu;
+        });
+        
+        setStudents(updatedStudents);
+        addToast('Lote processado. Revise as notas e clique em Salvar.', 'success');
+      } catch (err) {
+        addToast('Erro ao ler o arquivo Excel.', 'error');
+      }
+      e.target.value = ''; // Reset input
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 bg-slate-50 min-h-screen">
       {/* Toasts */}
@@ -483,9 +544,25 @@ export const GradesEntry: React.FC = () => {
             <h3 className="font-black text-navy uppercase tracking-tight">Lista de Alunos da Turma</h3>
           </div>
           {students.length > 0 && (
-            <Badge className="bg-petrol text-white border-none font-black px-4 py-1">
-              {students.length} ALUNOS ENCONTRADOS
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Badge className="bg-slate-200 text-slate-700 border-none font-black px-4 py-2 hover:bg-slate-200 uppercase">
+                {students.length} ALUNOS ENCONTRADOS
+              </Badge>
+              <Button onClick={downloadTemplate} variant="outline" className="border-petrol text-petrol hover:bg-petrol hover:text-white rounded-xl font-bold text-xs uppercase h-8">
+                Baixar Molde Excel
+              </Button>
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept=".xlsx, .xls"
+                  onChange={handleFileUpload} 
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase h-8 pointer-events-none">
+                  Importar Notas Excel
+                </Button>
+              </div>
+            </div>
           )}
         </div>
 

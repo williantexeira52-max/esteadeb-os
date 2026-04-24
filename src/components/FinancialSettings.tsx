@@ -7,6 +7,7 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
+  setDoc,
   serverTimestamp,
   orderBy
 } from 'firebase/firestore';
@@ -25,7 +26,12 @@ import {
   Tag,
   ArrowRight,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
+  Settings2,
+  Activity,
+  Save,
+  Webhook
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,7 +68,7 @@ interface FinancialExtra {
 }
 
 export const FinancialSettings: React.FC = () => {
-  const { user } = useAuth();
+  const { user, nucleo } = useAuth();
   const [plans, setPlans] = useState<FinancialPlan[]>([]);
   const [discounts, setDiscounts] = useState<FinancialDiscount[]>([]);
   const [extras, setExtras] = useState<FinancialExtra[]>([]);
@@ -74,6 +80,14 @@ export const FinancialSettings: React.FC = () => {
   const [editingExtraId, setEditingExtraId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<any[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, name: string, type: 'plan' | 'discount' | 'extra' } | null>(null);
+
+  const [whatsappApi, setWhatsappApi] = useState({ mode: 'web', apiUrl: '', apiToken: '' });
+  const [messageTemplates, setMessageTemplates] = useState({ 
+    late: 'Olá, [NOME_DO_ALUNO]! Notamos que sua mensalidade com vencimento em [VENCIMENTO] encontra-se em aberto. O valor base é de [VALOR]. Por favor, entre em contato para regularizar sua situação. Atenciosamente.', 
+    dueSoon: 'Olá, [NOME_DO_ALUNO]! Gostaríamos de lembrar que o vencimento da sua mensalidade será no dia [VENCIMENTO]. O valor base é de [VALOR]. Caso já tenha efetuado o pagamento, por favor desconsidere esta mensagem. Atenciosamente.' 
+  });
+  const [billingRules, setBillingRules] = useState({ enableAuto: false, daysBefore: 5, daysAfter: 1 });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const [planForm, setPlanForm] = useState<{
     name: string;
@@ -125,10 +139,21 @@ export const FinancialSettings: React.FC = () => {
       setExtras(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FinancialExtra)));
     });
 
+    const settingsDocRef = doc(db, 'settings', `financial_hub_${nucleo || 'default'}`);
+    const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.whatsappApi) setWhatsappApi(data.whatsappApi);
+        if (data.messageTemplates) setMessageTemplates(data.messageTemplates);
+        if (data.billingRules) setBillingRules(data.billingRules);
+      }
+    });
+
     return () => {
       unsubscribePlans();
       unsubscribeDiscounts();
       unsubscribeExtras();
+      unsubscribeSettings();
     };
   }, []);
 
@@ -144,6 +169,7 @@ export const FinancialSettings: React.FC = () => {
       } else {
         await addDoc(collection(db, 'financial_plans'), {
           ...planForm,
+          nucleoId: nucleo || 'PRESENCIAL',
           createdAt: serverTimestamp()
         });
         addToast('Plano criado com sucesso!', 'success');
@@ -167,6 +193,7 @@ export const FinancialSettings: React.FC = () => {
       } else {
         await addDoc(collection(db, 'financial_discounts'), {
           ...discountForm,
+          nucleoId: nucleo || 'PRESENCIAL',
           createdAt: serverTimestamp()
         });
         addToast('Desconto criado com sucesso!', 'success');
@@ -190,6 +217,7 @@ export const FinancialSettings: React.FC = () => {
       } else {
         await addDoc(collection(db, 'financial_extras'), {
           ...extraForm,
+          nucleoId: nucleo || 'PRESENCIAL',
           createdAt: serverTimestamp()
         });
         addToast('Item criado com sucesso!', 'success');
@@ -217,6 +245,25 @@ export const FinancialSettings: React.FC = () => {
     setExtraForm({ name: '', value: 0 });
     setEditingExtraId(null);
     setIsExtraModalOpen(false);
+  };
+
+  const handleSaveGlobalSettings = async () => {
+    try {
+      setIsSavingSettings(true);
+      const settingsDocRef = doc(db, 'settings', `financial_hub_${nucleo || 'default'}`);
+      await setDoc(settingsDocRef, {
+        whatsappApi,
+        messageTemplates,
+        billingRules,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      addToast('Configurações globais salvas!', 'success');
+    } catch (error) {
+      console.error(error);
+      addToast('Erro ao salvar configurações.', 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleEditPlan = (plan: FinancialPlan) => {
@@ -524,11 +571,155 @@ export const FinancialSettings: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-navy tracking-tighter uppercase">Configurações Financeiras</h1>
-          <p className="text-slate-500 font-medium mt-1">Gestão de planos de ensino e políticas de descontos.</p>
+          <p className="text-slate-500 font-medium mt-1">Gestão de planos, descontos, automações e integrações.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
+        {/* API e Automações Section */}
+        <div className="xl:col-span-2 bg-white p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col lg:flex-row gap-12">
+          
+          <div className="flex-1 space-y-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-navy text-white rounded-xl">
+                <MessageSquare size={20} />
+              </div>
+              <h2 className="text-xl font-black text-navy uppercase tracking-tight">Modelos do WhatsApp</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Lembrete de Vencimento Próximo</label>
+                <textarea 
+                  className="w-full h-32 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-medium resize-none"
+                  value={messageTemplates.dueSoon}
+                  onChange={(e) => setMessageTemplates({...messageTemplates, dueSoon: e.target.value})}
+                  placeholder="Mensagem para enviar antes do vencimento..."
+                />
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">Variáveis: [NOME_DO_ALUNO], [VENCIMENTO], [VALOR]</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Cobrança de Atraso</label>
+                <textarea 
+                  className="w-full h-32 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-medium resize-none"
+                  value={messageTemplates.late}
+                  onChange={(e) => setMessageTemplates({...messageTemplates, late: e.target.value})}
+                  placeholder="Mensagem para enviar após o vencimento..."
+                />
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest ml-1">Variáveis: [NOME_DO_ALUNO], [VENCIMENTO], [VALOR]</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-px bg-slate-100 hidden lg:block"></div>
+
+          <div className="flex-1 space-y-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-navy text-white rounded-xl">
+                  <Webhook size={20} />
+                </div>
+                <h2 className="text-xl font-black text-navy uppercase tracking-tight">API e Webhooks</h2>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Modo de Disparo do WhatsApp</label>
+                <select 
+                  className="w-full h-12 px-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold outline-none"
+                  value={whatsappApi.mode}
+                  onChange={(e) => setWhatsappApi({...whatsappApi, mode: e.target.value})}
+                >
+                  <option value="web">WhatsApp Web (Padrão, abre o navegador)</option>
+                  <option value="api">API / Webhook (Envio via servidor, em segundo plano)</option>
+                </select>
+              </div>
+
+              {whatsappApi.mode === 'api' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 flex gap-3 text-amber-800">
+                    <Activity size={24} className="shrink-0" />
+                    <p className="text-xs font-medium">Ao ativar o modo API, as mensagens de cobrança serão disparadas via requisição POST no backend. Utilize APIs como Evolution API, Z-Api, Baileys ou Oficial da Meta.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">URL da API (Endpoint)</label>
+                    <Input 
+                      placeholder="https://sua-api.com/v1/messages/send"
+                      className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold"
+                      value={whatsappApi.apiUrl}
+                      onChange={(e) => setWhatsappApi({...whatsappApi, apiUrl: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Token de Autenticação (Bearer/Apikey)</label>
+                    <Input 
+                      type="password"
+                      placeholder="••••••••••••••••"
+                      className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold"
+                      value={whatsappApi.apiToken}
+                      onChange={(e) => setWhatsappApi({...whatsappApi, apiToken: e.target.value})}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-slate-100 pt-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Settings2 size={20} className="text-slate-400"/>
+                  <h3 className="text-sm font-black text-slate-700 uppercase tracking-widest">Régua Automática</h3>
+                </div>
+                
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 rounded-md border-slate-300 text-petrol focus:ring-petrol"
+                    checked={billingRules.enableAuto}
+                    onChange={(e) => setBillingRules({...billingRules, enableAuto: e.target.checked})}
+                  />
+                  <span className="text-sm font-bold text-slate-700 group-hover:text-petrol transition-colors">Ativar cobrança automática diária (Requer backend Cronjob/Cloud Function)</span>
+                </label>
+
+                {billingRules.enableAuto && (
+                  <div className="flex gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex-1 space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dias antes (Lembrete)</label>
+                      <Input 
+                        type="number"
+                        className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold"
+                        value={billingRules.daysBefore}
+                        onChange={(e) => setBillingRules({...billingRules, daysBefore: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Dias depois (Atraso)</label>
+                      <Input 
+                        type="number"
+                        className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold"
+                        value={billingRules.daysAfter}
+                        onChange={(e) => setBillingRules({...billingRules, daysAfter: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 flex justify-end">
+                <Button 
+                  onClick={handleSaveGlobalSettings}
+                  disabled={isSavingSettings}
+                  className="bg-petrol hover:bg-petrol-dark text-white h-12 px-8 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center gap-2"
+                >
+                  {isSavingSettings ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  Salvar Integrações
+                </Button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
         {/* Plans Section */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">

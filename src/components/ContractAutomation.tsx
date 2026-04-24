@@ -582,7 +582,7 @@ __________________________________________
   };
 
   return (
-    <div id="print-overlay-container" className="fixed inset-0 z-[500] flex items-start justify-center pt-8 print:p-0 print:block print:bg-white print:static">
+    <div id="print-overlay-container" className="fixed inset-0 z-[500] flex items-start justify-center pt-8 print:p-0 print:block print:bg-white print:static print-overlay-container">
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           body, html { background: white !important; height: auto !important; overflow: visible !important; }

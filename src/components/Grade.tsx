@@ -254,6 +254,7 @@ export const Grade: React.FC = () => {
             headers={gradeHeaders}
             title="Grade Curricular"
             onImportSuccess={(count) => showToast(`${count} disciplinas importadas!`, "success")}
+            transformRow={(row) => ({ ...row, nucleoId: nucleo })}
           />
           <button 
             onClick={() => {

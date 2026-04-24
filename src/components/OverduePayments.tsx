@@ -10,7 +10,8 @@ import {
   doc,
   writeBatch,
   addDoc,
-  serverTimestamp
+  serverTimestamp,
+  updateDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -168,24 +169,88 @@ export const OverduePayments: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleMassBilling = () => {
+  const [communicationSettings, setCommunicationSettings] = useState<any>(null);
+
+  useEffect(() => {
+    if (!nucleo) return;
+    const unsub = onSnapshot(doc(db, 'settings', `financial_hub_${nucleo || 'default'}`), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCommunicationSettings({
+          whatsappProvider: data.whatsappApi?.mode || 'web',
+          apiUrl: data.whatsappApi?.apiUrl || '',
+          apiToken: data.whatsappApi?.apiToken || '',
+          templateLate: data.messageTemplates?.late || ''
+        });
+      }
+    });
+    return () => unsub();
+  }, [nucleo]);
+
+  const handleMassBilling = async () => {
     if (selectedIds.size === 0) {
       alert('Selecione pelo menos um aluno para cobrança.');
       return;
     }
 
-    selectedInstallments.forEach(inst => {
+    const isApiEnabled = communicationSettings?.whatsappProvider === 'api';
+    
+    let loopDelay = 0;
+    let apiSentCount = 0;
+
+    for (const inst of selectedInstallments) {
       if (inst.studentPhone) {
         const { total, daysOverdue } = calculatePenalties(inst);
         const cleanPhone = inst.studentPhone.replace(/\D/g, '');
+        
+        let template = communicationSettings?.templateLate || 'Olá, [NOME_DO_ALUNO]! Notamos que sua mensalidade com vencimento em [VENCIMENTO] encontra-se em aberto. O valor atualizado com multas é de [VALOR]. Por favor, entre em contato para regularizar.';
+        
+        // Substituir variáveis
+        template = template.replace(/\[NOME_DO_ALUNO\]/g, inst.studentName);
+        template = template.replace(/\[VENCIMENTO\]/g, new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR'));
+        template = template.replace(/\[VALOR\]/g, formatCurrency(total));
+        template = template.replace(/\[LINK_PAGAMENTO\]/g, '');
+
         if (cleanPhone) {
-          const message = encodeURIComponent(
-            `Olá, ${inst.studentName}! Notamos que sua mensalidade com vencimento em ${new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')} está em atraso há ${daysOverdue} dias. O valor atualizado com multa e juros é de ${formatCurrency(total)}. Por favor, entre em contato para regularizar sua situação. Atenciosamente, ESTEADEB.`
-          );
-          window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
+          const communicationMsg = `Cobrado dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+          try {
+            // we use the same field lastCommunication on financial_installments
+            await updateDoc(doc(db, 'financial_installments', inst.id), {
+              lastCommunication: communicationMsg
+            });
+          } catch (e) {
+            console.warn("Could not log communication:", e);
+          }
+
+          if (isApiEnabled && communicationSettings.apiUrl) {
+            try {
+              await fetch(communicationSettings.apiUrl, { 
+                method: 'POST', 
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(communicationSettings.apiToken ? { 'Authorization': `Bearer ${communicationSettings.apiToken}` } : {})
+                },
+                body: JSON.stringify({ number: '55' + cleanPhone, text: template }) 
+              });
+              apiSentCount++;
+            } catch (err) {
+              console.error('Erro na API WhatsApp:', err);
+            }
+          } else {
+            // WhatsApp Web Fallback
+            setTimeout(() => {
+               window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(template)}`, '_blank');
+            }, loopDelay);
+            loopDelay += 1500; // Dá um respiro entre as abas
+          }
         }
       }
-    });
+    }
+
+    if (apiSentCount > 0) {
+      alert(`${apiSentCount} mensagens enviadas via API!`);
+    }
   };
 
   const handleToggleSelect = (id: string) => {
@@ -581,10 +646,28 @@ export const OverduePayments: React.FC = () => {
                       <div className="flex gap-2 mt-1">
                         {inst.studentPhone && (
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               const cleanPhone = inst.studentPhone?.replace(/\D/g, '');
                               const { total, daysOverdue } = calculatePenalties(inst);
-                              const message = encodeURIComponent(`Olá, ${inst.studentName}! Notamos um atraso de ${daysOverdue} dias em sua mensalidade. O valor atualizado é ${formatCurrency(total)}. Vamos regularizar?`);
+                              let template = communicationSettings?.templateLate || `Olá, [NOME_DO_ALUNO]! Notamos um atraso em sua mensalidade. O valor atualizado é [VALOR]. Vamos regularizar?`;
+                              
+                              template = template.replace(/\[NOME_DO_ALUNO\]/g, inst.studentName);
+                              template = template.replace(/\[VENCIMENTO\]/g, new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR'));
+                              template = template.replace(/\[VALOR\]/g, formatCurrency(total));
+                              template = template.replace(/\[LINK_PAGAMENTO\]/g, '');
+
+                              const message = encodeURIComponent(template);
+                              
+                              const communicationMsg = `Cobrado dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+                              try {
+                                await updateDoc(doc(db, 'financial_installments', inst.id), {
+                                  lastCommunication: communicationMsg
+                                });
+                              } catch (e) {
+                                console.warn("Could not log communication:", e);
+                              }
+
                               window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
                             }}
                             className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"
@@ -604,9 +687,16 @@ export const OverduePayments: React.FC = () => {
                       </p>
                     </TableCell>
                     <TableCell className="p-6">
-                      <Badge className="bg-red-100 text-red-700 font-black text-[10px] uppercase px-3 py-1 rounded-full border-none">
-                        {daysOverdue} Dias
-                      </Badge>
+                      <div className="flex flex-col items-start gap-2">
+                        <Badge className="bg-red-100 text-red-700 font-black text-[10px] uppercase px-3 py-1 rounded-full border-none w-fit">
+                          {daysOverdue} Dias
+                        </Badge>
+                        {(inst as any).lastCommunication && (
+                           <Badge variant="outline" className="text-[8px] font-bold bg-slate-50 border-slate-200 text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis px-2 py-0.5 max-w-[120px]">
+                             {(inst as any).lastCommunication}
+                           </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="p-6">
                       <p className="font-black text-red-600 text-sm">{formatCurrency(total)}</p>

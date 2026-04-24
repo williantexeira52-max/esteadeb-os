@@ -1168,61 +1168,86 @@ export const Reports: React.FC = () => {
     );
     const snapshot = await getDocs(q);
     const paidInstallments = snapshot.docs
-      .map(doc => doc.data())
-      .filter(data => data.dueDate.startsWith(selectedYear));
+      .map(doc => ({ id: doc.id, ...doc.data() as any }))
+      .filter(data => data.dueDate.startsWith(selectedYear))
+      .sort((a, b) => new Date(a.paymentDate || a.dueDate).getTime() - new Date(b.paymentDate || b.dueDate).getTime());
 
-    const totalPaid = paidInstallments.reduce((acc, curr) => acc + (curr.baseValue - curr.discount), 0);
+    const totalPaid = paidInstallments.reduce((acc, curr) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
+    const studentName = student.name;
+    const studentCpf = student.cpf || 'Não Informado';
 
     setPrintContent({
-      title: 'Informe de Rendimentos para IR',
+      title: 'Declaração para fins de Imposto de Renda',
       html: (
-        <div className="p-12 space-y-12 text-slate-800 font-sans max-w-4xl mx-auto bg-white">
-          <div className="flex justify-between items-start border-b-2 border-slate-100 pb-8">
-            <div>
-              <h1 className="text-2xl font-black text-navy uppercase">Informe de Pagamentos</h1>
-              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Ano Calendário: {selectedYear}</p>
-            </div>
-            <div className="text-right">
-              <p className="font-bold text-navy">{systemConfig?.schoolName || 'ESTEADEB'}</p>
-              <p className="text-xs text-slate-500">CNPJ: {systemConfig?.cnpj || '00.000.000/0001-00'}</p>
-            </div>
-          </div>
-
-          <div className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Identificação do Beneficiário</h3>
-            <div className="grid grid-cols-2 gap-4">
+        <div className="p-12 text-slate-800 font-sans max-w-4xl mx-auto bg-white whitespace-pre-wrap">
+          <div className="flex justify-between items-end border-b-4 border-navy pb-4 mb-8">
+            <div className="flex items-center gap-4">
+              {systemConfig?.logoUrl ? (
+                <img src={systemConfig.logoUrl} alt="Logo" className="h-16 object-contain" />
+              ) : (
+                <div className="w-16 h-16 rounded-xl flex items-center justify-center border-2 border-navy text-navy font-black text-xs">
+                  ESTD
+                </div>
+              )}
               <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400">Nome</p>
-                <p className="font-bold text-navy">{student.name}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400">CPF</p>
-                <p className="font-bold text-navy">{student.cpf || '---.---.------'}</p>
+                <p className="text-[12px] font-black text-navy uppercase tracking-widest">ESTEADEB – Escola Teológica da Assembleia de Deus no RN</p>
+                <p className="text-[10px] text-slate-500 font-bold">R. Dr. Célso Ramalho, 70 - Lagoa Seca, Natal - RN</p>
+                <p className="text-[10px] text-slate-500 font-bold">CNPJ: 40.800.393/0001-32 | (84) 2030-4038</p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Resumo de Pagamentos Efetuados</h3>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-bold uppercase text-[10px]">Descrição</TableHead>
-                  <TableHead className="font-bold uppercase text-[10px] text-right">Valor Pago</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="font-medium">Mensalidades Escolares - {selectedYear}</TableCell>
-                  <TableCell className="text-right font-bold">{formatCurrency(totalPaid)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+          <h1 className="text-xl font-bold text-center mb-8 uppercase">Declaração para fins de Imposto de Renda</h1>
+          
+          <p className="text-justify leading-relaxed mb-8 text-sm">
+            Declaramos, para fins de comprovação junto à Receita Federal do Brasil, que o Sr(a). <span className="font-bold">{studentName}</span>, 
+            inscrito(a) no CPF nº <span className="font-bold">{studentCpf}</span>, efetuou pagamentos referentes a mensalidades 
+            educacionais à <span className="font-bold">ESTEADEB – Escola Teológica da Assembleia de Deus no Estado do Rio Grande do Norte</span>, 
+            inscrita no CNPJ nº 40.800.393/0001-32, no ano-calendário de <span className="font-bold">{selectedYear}</span>, conforme discriminação abaixo:
+          </p>
+
+          <table className="w-full text-sm mb-8 border-collapse">
+            <thead>
+              <tr className="border-b-2 border-slate-200">
+                <th className="font-bold text-left py-2">Data Pgto.</th>
+                <th className="font-bold text-left py-2">Nº da Parcela</th>
+                <th className="font-bold text-left py-2">Referência</th>
+                <th className="font-bold text-right py-2">Valor (R$)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paidInstallments.map((inst, index) => {
+                const dateParts = inst.paymentDate ? inst.paymentDate.split('-') : inst.dueDate.split('-');
+                const monthName = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1).toLocaleString('pt-BR', { month: 'long' });
+                const docId = inst.id.substring(0, 4).toUpperCase();
+                
+                return (
+                  <tr key={index} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                    <td className="py-2">{inst.paymentDate ? new Date(inst.paymentDate + 'T12:00:00').toLocaleDateString('pt-BR') : new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                    <td className="py-2">{docId}</td>
+                    <td className="py-2 capitalize">{`${monthName}/${dateParts[0]}`}</td>
+                    <td className="py-2 text-right">{new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(inst.finalPaidValue || inst.baseValue)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="text-right font-bold mt-8">
+            Valor total pago no ano-calendário de {selectedYear}: <span className="text-lg">{formatCurrency(totalPaid)}</span>
           </div>
 
-          <div className="pt-12 text-center text-xs text-slate-400 font-medium">
-            <p>Este documento é um informativo de pagamentos para fins de declaração de Imposto de Renda.</p>
-            <p>Gerado em {new Date().toLocaleString('pt-BR')}</p>
+          <div className="pt-24 mt-8 flex flex-col items-center justify-center">
+            <div className="w-80 border-t border-black pt-4 relative text-center">
+              {systemConfig?.directorSignatureUrl && (
+                <img src={systemConfig.directorSignatureUrl} alt="Assinatura" className="absolute -top-16 left-1/2 -translate-x-1/2 h-20 object-contain mix-blend-multiply" />
+              )}
+              <p className="font-black uppercase text-[12px]">{systemConfig?.directorName || 'Sérgio Lins Pessoa'}</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Diretor / Representante Legal</p>
+            </div>
+            <p className="text-xs uppercase text-slate-400 font-bold tracking-widest mt-8">
+              Natal/RN, {new Date().toLocaleDateString('pt-BR')}
+            </p>
           </div>
         </div>
       )
@@ -1417,7 +1442,7 @@ export const Reports: React.FC = () => {
     <div className="p-8 space-y-12 animate-in fade-in duration-500 bg-slate-50 min-h-screen">
       {/* Print Modal Overlay */}
       {isPrintModalOpen && (
-        <div id="print-modal-container" className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none print:static">
+        <div id="print-modal-container" className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none print:static print-overlay-container">
           <div className="w-full max-w-5xl flex justify-between items-center mb-6 print:hidden">
             <div className="flex items-center gap-3 text-white">
               <div className="p-2 bg-petrol rounded-xl">
