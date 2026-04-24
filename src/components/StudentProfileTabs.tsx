@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { getNextBusinessDay } from '../lib/dateUtils';
 import { 
   User, 
   Phone, 
@@ -312,15 +313,18 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
         }
 
         let dueDay = 10;
+        let dueDate: Date;
+
         if (newInstallmentConfig.dueDayPattern === '5_UTIL') {
           dueDay = getFifthBusinessDay(installmentYear, installmentMonth);
+          dueDate = new Date(installmentYear, installmentMonth, dueDay);
         } else if (newInstallmentConfig.dueDayPattern === '20') {
           dueDay = 20;
+          dueDate = getNextBusinessDay(new Date(installmentYear, installmentMonth, dueDay));
         } else {
           dueDay = Number(newInstallmentConfig.dueDayPattern) || 10;
+          dueDate = getNextBusinessDay(new Date(installmentYear, installmentMonth, dueDay));
         }
-
-        const dueDate = new Date(installmentYear, installmentMonth, dueDay);
         const parcelRef = doc(collection(db, 'financial_installments'));
         
         batch.set(parcelRef, {

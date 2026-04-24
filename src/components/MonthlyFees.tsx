@@ -37,6 +37,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { DataActions } from './DataActions';
+import { getNextBusinessDay } from '../lib/dateUtils';
 
 interface Installment {
   id: string;
@@ -392,13 +393,15 @@ export const MonthlyFees: React.FC = () => {
             let day = 10;
             if (formData.dueDayPattern === '5_UTIL') {
               day = getFifthBusinessDay(installmentYear, installmentMonth);
+              dueDate = new Date(installmentYear, installmentMonth, day);
             } else {
               day = Number(formData.dueDayPattern);
+              dueDate = getNextBusinessDay(new Date(installmentYear, installmentMonth, day));
             }
-            dueDate = new Date(installmentYear, installmentMonth, day);
           } else {
-            dueDate = new Date(baseDate);
-            dueDate.setMonth(dueDate.getMonth() + i);
+            const tempDate = new Date(baseDate);
+            tempDate.setMonth(tempDate.getMonth() + i);
+            dueDate = getNextBusinessDay(tempDate);
           }
           
           batch.push(addDoc(collection(db, 'financial_installments'), {
