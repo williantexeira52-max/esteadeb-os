@@ -187,18 +187,24 @@ export const Dashboard = () => {
                 const snackTotal = getMonthlySum(allSnackCash, 'date');
                 
                 const instTotal = paidInstallments.filter((p: any) => {
-                  const d = p.updatedAt?.toDate ? p.updatedAt.toDate() : (p.updatedAt ? new Date(p.updatedAt) : new Date(p.dueDate));
+                  const d = p.paymentDate ? new Date(p.paymentDate) : (p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.dueDate));
                   return d && d.getMonth() === i && d.getFullYear() === currentYear;
                 }).reduce((acc, curr: any) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
+                
+                const projetadoTotal = allInst.filter((p: any) => {
+                  const d = p.dueDate ? new Date(p.dueDate + 'T12:00:00') : null;
+                  return d && d.getMonth() === i && d.getFullYear() === currentYear;
+                }).reduce((acc, curr: any) => acc + (curr.baseValue || 0), 0);
                 
                 return { 
                   name: m, 
                   receitaAdm: transTotal + instTotal,
+                  projetado: projetadoTotal,
                   receitaEscola: schoolTotal,
                   receitaCantina: snackTotal
                 };
               });
-              setChartData(monthlyData.slice(0, 6));
+              setChartData(monthlyData.slice(0, 7)); // Changed to 7 to show more months
             });
           });
         });
@@ -257,7 +263,7 @@ export const Dashboard = () => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-esteadeb-blue mb-6">Receita por Mês ({new Date().getFullYear()})</h3>
           <div className="h-[300px]">
-            {chartData.length > 0 && chartData.some(d => d.receitaAdm > 0 || d.receitaEscola > 0 || d.receitaCantina > 0) ? (
+            {chartData.length > 0 && chartData.some(d => d.projetado > 0 || d.receitaAdm > 0 || d.receitaEscola > 0 || d.receitaCantina > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -266,9 +272,10 @@ export const Dashboard = () => {
                   <Tooltip 
                     contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
                   />
-                  <Bar dataKey="receitaAdm" name="Caixa Adm" stackId="a" fill="#1e3a8a" />
-                  <Bar dataKey="receitaEscola" name="Caixa Escola" stackId="a" fill="#007a33" />
-                  <Bar dataKey="receitaCantina" name="Caixa Cantina" stackId="a" fill="#cda53f" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="projetado" name="Projetado" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="receitaAdm" name="Realizado: Adm" stackId="a" fill="#1e3a8a" />
+                  <Bar dataKey="receitaEscola" name="Realizado: Escola" stackId="a" fill="#007a33" />
+                  <Bar dataKey="receitaCantina" name="Realizado: Cantina" stackId="a" fill="#cda53f" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

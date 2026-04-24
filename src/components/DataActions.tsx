@@ -69,8 +69,28 @@ export const DataActions: React.FC<DataActionsProps> = ({
     try {
       const activeHeaders = templateHeaders || headers;
       const templateData = [{}];
+      
       activeHeaders.forEach(h => {
-        (templateData[0] as any)[h.label] = '';
+        let exampleValue = '';
+        const labelLower = h.label.toLowerCase();
+        
+        if (labelLower.includes('id') || labelLower.includes('matricula')) exampleValue = 'EX: 12345';
+        else if (labelLower.includes('nome') || labelLower.includes('aluno')) exampleValue = 'EX: João Silva';
+        else if (labelLower.includes('data') || labelLower.includes('nascimento')) exampleValue = 'EX: 01/01/2026';
+        else if (labelLower.includes('cpf')) exampleValue = 'EX: 123.456.789-00';
+        else if (labelLower.includes('telefone') || labelLower.includes('celular') || labelLower.includes('whatsapp')) exampleValue = 'EX: 11999999999';
+        else if (labelLower.includes('email')) exampleValue = 'EX: aluno@email.com';
+        else if (labelLower.includes('modulo')) exampleValue = 'EX: 1';
+        else if (labelLower.includes('curso')) exampleValue = 'EX: TEOLOGIA';
+        else if (labelLower.includes('semestre')) exampleValue = 'EX: 1';
+        else if (labelLower.includes('turma')) exampleValue = 'EX: T01';
+        else if (labelLower.includes('ano')) exampleValue = 'EX: 2026';
+        else if (labelLower.includes('disciplinas')) exampleValue = 'EX: Teologia Sistemática, Hermenêutica';
+        else if (labelLower.includes('val') || labelLower.includes('preco')) exampleValue = 'EX: 150.00';
+        else if (labelLower.includes('professor')) exampleValue = 'EX: Opcional: Pr. Marcos';
+        else exampleValue = 'EX: Exemplo';
+
+        (templateData[0] as any)[h.label] = exampleValue;
       });
 
       const ws = XLSX.utils.json_to_sheet(templateData);
