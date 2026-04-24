@@ -128,7 +128,7 @@ export const Dashboard = () => {
           }
 
           getDocs(qInstallments).then(instSnap => {
-            const paidInstallments = instSnap.docs.map(d => d.data());
+            const paidInstallments = instSnap.docs.map(d => d.data()).filter((d: any) => d.paymentMethod !== 'Permuta de Serviço');
             
             let qAllInstallments = query(collection(db, 'financial_installments'), where('nucleoId', '==', nucleo));
             if (profile?.poloId) {

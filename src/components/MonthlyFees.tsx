@@ -22,7 +22,9 @@ import {
   QrCode,
   Wallet,
   Printer,
-  MessageSquare
+  MessageSquare,
+  RotateCcw,
+  RefreshCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +50,7 @@ interface Installment {
   dueDate: string;
   status: 'Pendente' | 'Pago';
   paymentDate?: string;
-  paymentMethod?: 'Pix' | 'Dinheiro' | 'Cartão';
+  paymentMethod?: 'Pix' | 'Dinheiro' | 'Cartão' | 'Permuta de Serviço';
   finalPaidValue?: number;
   createdAt?: any;
 }
@@ -102,9 +104,12 @@ export const MonthlyFees: React.FC = () => {
     return day;
   };
 
-  const [paymentData, setPaymentData] = useState({
+  const [paymentData, setPaymentData] = useState<{
+    paymentDate: string;
+    paymentMethod: 'Pix' | 'Dinheiro' | 'Cartão' | 'Permuta de Serviço';
+  }>({
     paymentDate: new Date().toISOString().split('T')[0],
-    paymentMethod: 'Pix' as 'Pix' | 'Dinheiro' | 'Cartão'
+    paymentMethod: 'Pix'
   });
 
   const addToast = (title: string, type: 'success' | 'error') => {
@@ -455,6 +460,23 @@ export const MonthlyFees: React.FC = () => {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'financial_installments');
       addToast('Erro ao registrar pagamento.', 'error');
+    }
+  };
+
+  const handleEstorno = async (installment: Installment) => {
+    if (!window.confirm('Tem certeza que deseja estornar este pagamento? O status voltará para Pendente.')) return;
+    try {
+      await updateDoc(doc(db, 'financial_installments', installment.id), {
+        status: 'Pendente',
+        paymentDate: null,
+        paymentMethod: null,
+        finalPaidValue: null,
+        updatedAt: serverTimestamp()
+      });
+      addToast('Pagamento estornado com sucesso!', 'success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'financial_installments');
+      addToast('Erro ao estornar pagamento.', 'error');
     }
   };
 
@@ -897,14 +919,14 @@ export const MonthlyFees: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['Pix', 'Dinheiro', 'Cartão'] as const).map(method => (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {(['Pix', 'Dinheiro', 'Cartão', 'Permuta de Serviço'] as const).map(method => (
                       <button
                         key={method}
                         type="button"
                         onClick={() => setPaymentData({...paymentData, paymentMethod: method})}
                         className={cn(
-                          "h-12 rounded-xl text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 transition-all",
+                          "h-14 rounded-xl text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 transition-all p-1 text-center",
                           paymentData.paymentMethod === method 
                             ? "bg-emerald-600 border-emerald-600 text-white" 
                             : "bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200"
@@ -913,7 +935,8 @@ export const MonthlyFees: React.FC = () => {
                         {method === 'Pix' && <QrCode size={16} />}
                         {method === 'Dinheiro' && <Banknote size={16} />}
                         {method === 'Cartão' && <CreditCard size={16} />}
-                        {method}
+                        {method === 'Permuta de Serviço' && <RefreshCcw size={16} />}
+                        {method === 'Permuta de Serviço' ? 'Permuta' : method}
                       </button>
                     ))}
                   </div>
@@ -1013,7 +1036,8 @@ export const MonthlyFees: React.FC = () => {
                   const totalPix = paidInMonth.filter(i => i.paymentMethod === 'Pix').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
                   const totalDinheiro = paidInMonth.filter(i => i.paymentMethod === 'Dinheiro').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
                   const totalCartao = paidInMonth.filter(i => i.paymentMethod === 'Cartão' || i.paymentMethod === 'Cartão Crédito').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
-                  const totalGeral = paidInMonth.reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalPermuta = paidInMonth.filter(i => i.paymentMethod === 'Permuta de Serviço').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalGeral = totalPix + totalDinheiro + totalCartao;
 
                   return (
                     <div className="space-y-8">
@@ -1065,7 +1089,8 @@ export const MonthlyFees: React.FC = () => {
                                   <Badge className={cn(
                                     "border-none uppercase text-[9px] font-black print:p-0",
                                     inst.paymentMethod === 'Pix' ? "bg-teal-50 text-teal-700" :
-                                    inst.paymentMethod === 'Dinheiro' ? "bg-emerald-50 text-emerald-700" : "bg-indigo-50 text-indigo-700"
+                                    inst.paymentMethod === 'Dinheiro' ? "bg-emerald-50 text-emerald-700" : 
+                                    inst.paymentMethod === 'Permuta de Serviço' ? "bg-orange-50 text-orange-700" : "bg-indigo-50 text-indigo-700"
                                   )}>
                                     {inst.paymentMethod || '--'}
                                   </Badge>
@@ -1291,13 +1316,22 @@ export const MonthlyFees: React.FC = () => {
                             </button>
                           </>
                         ) : (
-                          <button 
-                            onClick={() => generateReceipt(inst)}
-                            className="p-2 text-petrol hover:bg-petrol/10 rounded-lg transition-all"
-                            title="Imprimir Recibo"
-                          >
-                            <Printer size={16} />
-                          </button>
+                          <>
+                            <button 
+                              onClick={() => handleEstorno(inst)}
+                              className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-all"
+                              title="Estornar Pagamento"
+                            >
+                              <RotateCcw size={16} />
+                            </button>
+                            <button 
+                              onClick={() => generateReceipt(inst)}
+                              className="p-2 text-petrol hover:bg-petrol/10 rounded-lg transition-all"
+                              title="Imprimir Recibo"
+                            >
+                              <Printer size={16} />
+                            </button>
+                          </>
                         )}
                         <button onClick={() => setDeleteConfirm({ id: inst.id, name: inst.studentName })} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                           <Trash2 size={16} />

@@ -1169,7 +1169,7 @@ export const Reports: React.FC = () => {
     const snapshot = await getDocs(q);
     const paidInstallments = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() as any }))
-      .filter(data => data.dueDate.startsWith(selectedYear))
+      .filter(data => data.dueDate.startsWith(selectedYear) && data.paymentMethod !== 'Permuta de Serviço')
       .sort((a, b) => new Date(a.paymentDate || a.dueDate).getTime() - new Date(b.paymentDate || b.dueDate).getTime());
 
     const totalPaid = paidInstallments.reduce((acc, curr) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
@@ -1275,7 +1275,7 @@ export const Reports: React.FC = () => {
       const monthInstallments = allInstallments.filter(inst => inst.dueDate.startsWith(monthPrefix));
       
       const paid = monthInstallments
-        .filter(inst => inst.status === 'Pago')
+        .filter(inst => inst.status === 'Pago' && inst.paymentMethod !== 'Permuta de Serviço')
         .reduce((acc, curr) => acc + (curr.finalPaidValue || (curr.baseValue - curr.discount)), 0);
       
       const pending = monthInstallments

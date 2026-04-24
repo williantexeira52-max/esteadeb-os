@@ -75,9 +75,11 @@ interface OverdueInstallment {
 export const OverduePayments: React.FC = () => {
   const { profile, nucleo, user } = useAuth();
   const [installments, setInstallments] = useState<OverdueInstallment[]>([]);
+  const [allPending, setAllPending] = useState<OverdueInstallment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [daysFilter, setDaysFilter] = useState<number | 'all'>('all');
+  const [includeAllPending, setIncludeAllPending] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isNegotiationOpen, setIsNegotiationOpen] = useState(false);
   const [negotiationStep, setNegotiationStep] = useState<'options' | 'acordo'>('options');
@@ -155,6 +157,8 @@ export const OverduePayments: React.FC = () => {
         ...doc.data()
       })) as OverdueInstallment[];
       
+      setAllPending(list.filter(inst => inst.status === 'Pendente' || inst.status === 'Late'));
+
       const overdueList = list.filter(inst => 
         inst.status === 'Late' || (inst.status === 'Pendente' && inst.dueDate < today)
       );
@@ -336,7 +340,8 @@ export const OverduePayments: React.FC = () => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  const filtered = installments.filter(inst => {
+  const baseList = includeAllPending ? allPending : installments;
+  const filtered = baseList.filter(inst => {
     const matchesSearch = inst.studentName.toLowerCase().includes(searchTerm.toLowerCase());
     if (!matchesSearch) return false;
 
@@ -589,6 +594,19 @@ export const OverduePayments: React.FC = () => {
           ))}
         </div>
 
+        <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 whitespace-nowrap h-14">
+          <input
+            type="checkbox"
+            id="includePending"
+            checked={includeAllPending}
+            onChange={(e) => setIncludeAllPending(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-300 text-petrol focus:ring-petrol"
+          />
+          <Label htmlFor="includePending" className="text-[10px] font-black uppercase tracking-widest text-slate-500 cursor-pointer">
+            A Vencer
+          </Label>
+        </div>
+
         <Button variant="outline" className="h-14 w-14 rounded-2xl border-slate-100 text-slate-400 shrink-0">
           <Filter size={20} />
         </Button>
@@ -688,9 +706,15 @@ export const OverduePayments: React.FC = () => {
                     </TableCell>
                     <TableCell className="p-6">
                       <div className="flex flex-col items-start gap-2">
-                        <Badge className="bg-red-100 text-red-700 font-black text-[10px] uppercase px-3 py-1 rounded-full border-none w-fit">
-                          {daysOverdue} Dias
-                        </Badge>
+                        {daysOverdue > 0 ? (
+                          <Badge className="bg-red-100 text-red-700 font-black text-[10px] uppercase px-3 py-1 rounded-full border-none w-fit">
+                            {daysOverdue} Dias
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-700 font-black text-[10px] uppercase px-3 py-1 rounded-full border-none w-fit">
+                            A Vencer
+                          </Badge>
+                        )}
                         {(inst as any).lastCommunication && (
                            <Badge variant="outline" className="text-[8px] font-bold bg-slate-50 border-slate-200 text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis px-2 py-0.5 max-w-[120px]">
                              {(inst as any).lastCommunication}

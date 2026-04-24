@@ -56,7 +56,7 @@ export const CashClosingPrintModal: React.FC<CashClosingPrintModalProps> = ({ is
 
       const qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), ...baseConstraints);
       const snapInstallments = await getDocs(qInstallments);
-      const allInstallments = snapInstallments.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as any));
+      const allInstallments = snapInstallments.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as any)).filter((inst: any) => inst.paymentMethod !== 'Permuta de Serviço');
 
       // Split into current period vs previous period
       let prevBal = 0;
