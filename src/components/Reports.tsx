@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { useAuth } from '../contexts/AuthContext';
+import { ClassDiaryModal } from './ClassDiaryModal';
 
 interface Student {
   id: string;
@@ -81,6 +82,7 @@ export const Reports: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [selectedSignature, setSelectedSignature] = useState('director');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isClassDiaryModalOpen, setIsClassDiaryModalOpen] = useState(false);
   const [printContent, setPrintContent] = useState<{ title: string; html: React.ReactNode } | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -464,117 +466,7 @@ export const Reports: React.FC = () => {
   };
 
   const generateDiarioClasse = async () => {
-    const targetClass = classes.find(c => c.id === selectedClassId);
-    if (!targetClass) return;
-
-    // Fetch students
-    const qStudents = query(
-      collection(db, 'students'), 
-      where('classId', '==', selectedClassId), 
-      where('deleted', '==', false),
-      where('status', 'in', ['Ativo', 'ativo', 'ATIVO', 'Matriculado', 'matriculado', 'MATRICULADO', 'Pendente', 'pendente', 'PENDENTE']),
-      orderBy('name', 'asc')
-    );
-    const snapStudents = await getDocs(qStudents);
-    const classStudents = snapStudents.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-
-    // Generate dates (simplified: next 10 Saturdays)
-    const dates = [];
-    let current = new Date();
-    while (dates.length < 10) {
-      if (current.getDay() === 6) { // Saturday
-        dates.push(new Date(current));
-      }
-      current.setDate(current.getDate() + 1);
-    }
-
-    setPrintContent({
-      title: `Diário de Classe - ${targetClass.name}`,
-      html: (
-        <div className="p-8 space-y-6 text-slate-800 font-sans bg-white w-[1123px] mx-auto min-h-[794px]">
-          <div className="relative flex items-center justify-center min-h-[80px] mb-6 w-full border-b-2 border-navy pb-4">
-            <div className="absolute left-0 top-0">
-              {systemConfig?.logoUrl ? (
-                <img src={systemConfig.logoUrl} alt="Logo" className="h-16 w-auto object-contain" referrerPolicy="no-referrer" />
-              ) : (
-                <GraduationCap size={40} className="text-navy" />
-              )}
-            </div>
-            <div className="text-center">
-              <h1 className="text-2xl font-black text-navy uppercase leading-none">Diário de Classe</h1>
-              <p className="text-[10px] font-bold text-slate-500 uppercase mt-1">Turma: {targetClass.name} | Ano: {new Date().getFullYear()}</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse border border-slate-300 text-[9px]">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="border border-slate-300 p-2 w-8">#</th>
-                  <th className="border border-slate-300 p-2 text-left">Nome do Aluno</th>
-                  {dates.map((d, i) => (
-                    <th key={i} className="border border-slate-300 p-1 w-10 text-center rotate-90 h-20">
-                      {d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                    </th>
-                  ))}
-                  <th className="border border-slate-300 p-2 w-12 text-center">Faltas</th>
-                  <th className="border border-slate-300 p-2 w-12 text-center">Média</th>
-                </tr>
-              </thead>
-              <tbody>
-                {classStudents.map((s, i) => (
-                  <tr key={i} className="h-8">
-                    <td className="border border-slate-300 text-center font-bold">{i + 1}</td>
-                    <td className="border border-slate-300 px-2 font-bold uppercase">{s.name}</td>
-                    {dates.map((_, j) => (
-                      <td key={j} className="border border-slate-300"></td>
-                    ))}
-                    <td className="border border-slate-300"></td>
-                    <td className="border border-slate-300"></td>
-                  </tr>
-                ))}
-                {/* Empty rows for manual entry */}
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={`empty-${i}`} className="h-8">
-                    <td className="border border-slate-300 text-center font-bold">{classStudents.length + i + 1}</td>
-                    <td className="border border-slate-300 px-2"></td>
-                    {dates.map((_, j) => (
-                      <td key={j} className="border border-slate-300"></td>
-                    ))}
-                    <td className="border border-slate-300"></td>
-                    <td className="border border-slate-300"></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="grid grid-cols-2 gap-8 pt-8">
-            <div className="space-y-4">
-              <p className="text-[10px] font-black uppercase tracking-widest">Conteúdo Ministrado:</p>
-              <div className="grid grid-rows-4 gap-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="border-b border-slate-200 h-6"></div>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col items-center justify-end space-y-12">
-               <div className="w-64 border-t border-slate-900 pt-2 text-center relative">
-                  {systemConfig?.directorSignatureUrl && (
-                    <img src={systemConfig.directorSignatureUrl} alt="Assinatura" className="absolute -top-12 left-1/2 -translate-x-1/2 h-16 object-contain mix-blend-multiply" />
-                  )}
-                  <p className="text-[9px] font-black uppercase tracking-widest">{systemConfig?.directorName || 'Sérgio Lins Pessoa'}</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase">Visto da Direção</p>
-               </div>
-               <div className="w-64 border-t border-slate-900 pt-2 text-center mt-8">
-                <p className="text-[10px] font-black uppercase tracking-widest">Assinatura do Professor</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )
-    });
-    setIsPrintModalOpen(true);
+    setIsClassDiaryModalOpen(true);
   };
 
   const generateConclusao = () => {
@@ -1462,8 +1354,14 @@ export const Reports: React.FC = () => {
           
           <div className="w-full max-w-5xl bg-white shadow-2xl rounded-[2rem] overflow-hidden print:shadow-none print:rounded-none flex flex-col max-h-[90vh] print:max-h-none print:h-auto">
             <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar print:overflow-visible print:p-0">
-              <div className="scale-[0.9] lg:scale-100 origin-top transform-gpu print:scale-100 print:transform-none">
+              <div className="scale-[0.9] lg:scale-100 origin-top transform-gpu print:scale-100 print:transform-none relative pb-32 print:pb-32">
                 {printContent?.html}
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex justify-center w-full max-w-4xl opacity-80" style={{ pageBreakInside: 'avoid' }}>
+                   <div className="w-64 border-t-2 border-slate-900 pt-4 text-center">
+                    <p className="font-black uppercase text-sm tracking-widest text-slate-800">William Carvalho</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Coordenador</p>
+                   </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1726,6 +1624,11 @@ export const Reports: React.FC = () => {
           }
         }
       `}} />
+      <ClassDiaryModal 
+        isOpen={isClassDiaryModalOpen} 
+        onClose={() => setIsClassDiaryModalOpen(false)} 
+        targetClass={classes.find(c => c.id === selectedClassId)}
+      />
     </div>
   );
 };

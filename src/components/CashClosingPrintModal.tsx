@@ -333,6 +333,10 @@ export const CashClosingPrintModal: React.FC<CashClosingPrintModalProps> = ({ is
                     <p className="text-xs font-black uppercase">Responsável Financeiro</p>
                   </div>
                   <div className="w-64 border-t border-black pt-2 text-center">
+                    <p className="text-xs font-black uppercase">William Carvalho</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Coordenador</p>
+                  </div>
+                  <div className="w-64 border-t border-black pt-2 text-center">
                     <p className="text-xs font-black uppercase">Diretoria</p>
                   </div>
                </div>

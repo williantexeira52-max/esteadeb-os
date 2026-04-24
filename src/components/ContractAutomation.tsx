@@ -568,6 +568,10 @@ __________________________________________
                <p className="text-[11px] font-bold uppercase">{systemConfig?.directorName || 'Sérgio Lins Pessoa, MsC.'}</p>
                <p className="text-[9px] font-medium uppercase text-slate-500">Diretor</p>
             </div>
+            <div className="w-full border-t border-black pt-2 relative mt-8">
+               <p className="text-[11px] font-bold uppercase">William Carvalho</p>
+               <p className="text-[9px] font-medium uppercase text-slate-500">Coordenador</p>
+            </div>
           </div>
         </div>
       </div>

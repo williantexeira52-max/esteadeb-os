@@ -466,7 +466,8 @@ export const GradesEntry: React.FC = () => {
           </div>
           <div className="pr-4">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Política de Faltas</p>
-            <p className="text-xs font-bold text-slate-700">Máximo: 2 faltas (75% Presença)</p>
+            <p className="text-xs font-bold text-slate-700">Máximo: 2 faltas.</p>
+            <p className="text-[9px] font-bold text-amber-600 mt-0.5">* Faltas Abonadas não debitam do limite.</p>
           </div>
         </div>
       </div>

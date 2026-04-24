@@ -1221,7 +1221,12 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                   {parcels.sort((a,b) => a.parcelNumber - b.parcelNumber).map((p) => {
                     const { interest, fine, total } = calculateInterest(p);
                     return (
-                      <div key={p.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between group">
+                      <div key={p.id} className="relative p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between group">
+                        {p.isAcordo && (
+                          <div className="absolute -top-2 -left-2 rotate-[-12deg] z-10">
+                            <Badge className="bg-orange-500 text-white border-none text-[8px] font-black uppercase tracking-widest px-2 py-0 shadow-sm">Acordo</Badge>
+                          </div>
+                        )}
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center font-bold text-navy shadow-sm">
                             {p.parcelNumber}

@@ -244,6 +244,7 @@ export const Schedule: React.FC = () => {
 
   const handleEdit = (entry: ScheduleEntry) => {
     setFormData({
+      classIds: [entry.classId],
       classId: entry.classId,
       subjectId: entry.subjectId,
       teacherId: entry.teacherId,

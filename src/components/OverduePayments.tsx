@@ -34,7 +34,8 @@ import {
   Trash2,
   Plus,
   CheckCircle2,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -364,6 +365,35 @@ export const OverduePayments: React.FC = () => {
     }, { totalOverdue: 0, count: 0 });
   }, [filtered]);
 
+  const handleExportCsv = () => {
+    const csvContent = [
+      ['Aluno', 'Telefone', 'Vencimento', 'Atraso (Dias)', 'Valor Original', 'Multa', 'Juros', 'Total Acumulado'].join(','),
+      ...filtered.map(inst => {
+        const { total, daysOverdue, fine, interest } = calculatePenalties(inst);
+        const originalNet = inst.baseValue - inst.discount;
+        return [
+          `"${inst.studentName.trim()}"`,
+          `"${inst.studentPhone || ''}"`,
+          inst.dueDate,
+          daysOverdue,
+          originalNet,
+          fine.toFixed(2),
+          interest.toFixed(2),
+          total.toFixed(2)
+        ].join(',');
+      })
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `relatorio_inadimplencia_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 bg-slate-50 min-h-screen">
       {/* Header */}
@@ -385,9 +415,16 @@ export const OverduePayments: React.FC = () => {
             </Button>
           )}
           <Button 
+            onClick={handleExportCsv}
+            variant="outline" 
+            className="h-14 px-6 rounded-2xl border-2 border-slate-200 text-slate-600 font-black uppercase tracking-widest flex items-center gap-2"
+          >
+            <Download size={20} /> Exportar CSV
+          </Button>
+          <Button 
             onClick={handleMassBilling}
             variant="outline" 
-            className="h-14 px-8 rounded-2xl border-2 border-slate-200 text-slate-600 font-black uppercase tracking-widest flex items-center gap-3"
+            className="h-14 px-6 rounded-2xl border-2 border-slate-200 text-slate-600 font-black uppercase tracking-widest flex items-center gap-2"
           >
             <MessageSquare size={20} /> Cobrança em Massa (WhatsApp)
           </Button>

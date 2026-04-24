@@ -71,7 +71,8 @@ export const MonthlyFees: React.FC = () => {
   
   // Bulk selection and filtering states
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [monthFilter, setMonthFilter] = useState(''); // Format: YYYY-MM
+  const [filterMonth, setFilterMonth] = useState('');
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
   const [isBatchDateModalOpen, setIsBatchDateModalOpen] = useState(false);
   const [isReceiptReportOpen, setIsReceiptReportOpen] = useState(false);
   const [reportMonthFilter, setReportMonthFilter] = useState(new Date().toISOString().substring(0, 7));
@@ -348,8 +349,8 @@ export const MonthlyFees: React.FC = () => {
       .replace(/\[VENCIMENTO\]/g, dueDateFormatted)
       .replace(/\[VALOR\]/g, formatCurrency(total));
 
-    const communicationMsg = `${inst.status === 'Late' ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-
+    const communicationMsg = `${calculatePenalties(inst).isLate ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    
     try {
       await updateDoc(doc(db, 'financial_installments', inst.id), {
         lastCommunication: communicationMsg
@@ -574,6 +575,44 @@ export const MonthlyFees: React.FC = () => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
+  const [isBatchPaymentModalOpen, setIsBatchPaymentModalOpen] = useState(false);
+  const [batchPaymentData, setBatchPaymentData] = useState<{
+    paymentDate: string;
+    paymentMethod: 'Pix' | 'Dinheiro' | 'Cartão' | 'Permuta de Serviço';
+  }>({
+    paymentDate: new Date().toISOString().split('T')[0],
+    paymentMethod: 'Pix'
+  });
+
+  const handleBatchPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const selectedInsts = installments.filter(i => selectedIds.includes(i.id));
+
+      selectedInsts.forEach(inst => {
+        const { total } = calculatePenalties(inst, batchPaymentData.paymentDate);
+        batch.update(doc(db, 'financial_installments', inst.id), {
+          status: 'Pago',
+          paymentDate: batchPaymentData.paymentDate,
+          paymentMethod: batchPaymentData.paymentMethod,
+          finalPaidValue: total,
+          updatedAt: serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      addToast(`${selectedInsts.length} baixas registradas com sucesso!`, 'success');
+      setIsBatchPaymentModalOpen(false);
+      setSelectedIds([]);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'financial_installments');
+      addToast('Erro ao realizar baixa em lote.', 'error');
+    }
+  };
+
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
     setIsBulkDeleting(true);
@@ -645,19 +684,20 @@ export const MonthlyFees: React.FC = () => {
     let apiSentCount = 0;
 
     for (const inst of selectedInstallments) {
-      if (inst.studentPhone) {
-        const cleanPhone = inst.studentPhone.replace(/\D/g, '');
+      const studentPhone = (inst as any).studentPhone;
+      if (studentPhone) {
+        const cleanPhone = studentPhone.replace(/\D/g, '');
         if (cleanPhone) {
           const dueDateFormatted = new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR');
           
-          let rawMessage = inst.status === 'Late' ? defaultTemplates.late : defaultTemplates.dueSoon;
+          let rawMessage = calculatePenalties(inst).isLate ? defaultTemplates.late : defaultTemplates.dueSoon;
           
           let parsedMessage = rawMessage
             .replace(/\[NOME_DO_ALUNO\]/g, inst.studentName)
             .replace(/\[VENCIMENTO\]/g, dueDateFormatted)
             .replace(/\[VALOR\]/g, formatCurrency(inst.baseValue));
 
-          const communicationMsg = `${inst.status === 'Late' ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+          const communicationMsg = `${calculatePenalties(inst).isLate ? 'Cobrado' : 'Lembrete enviado'} dia ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
           try {
             await updateDoc(doc(db, 'financial_installments', inst.id), {
@@ -699,14 +739,14 @@ export const MonthlyFees: React.FC = () => {
   };
 
   const filteredInstallments = useMemo(() => {
-    if (!searchTerm && !monthFilter) return installments;
     return installments.filter(inst => {
       const matchSearch = inst.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         String((inst as any).studentMatricula || '').includes(searchTerm);
-      const matchMonth = monthFilter ? inst.dueDate.startsWith(monthFilter) : true;
-      return matchSearch && matchMonth;
+      const matchYear = filterYear ? inst.dueDate.startsWith(filterYear) : true;
+      const matchMonth = filterMonth ? inst.dueDate.slice(5, 7) === filterMonth : true;
+      return matchSearch && matchYear && matchMonth;
     });
-  }, [installments, searchTerm, monthFilter]);
+  }, [installments, searchTerm, filterMonth, filterYear]);
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 bg-slate-50 min-h-screen relative">
@@ -989,6 +1029,68 @@ export const MonthlyFees: React.FC = () => {
         </div>
       )}
 
+      {/* Batch Payment Modal */}
+      {isBatchPaymentModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden">
+            <div className="bg-emerald-600 p-6 flex items-center justify-between text-white">
+              <h2 className="text-xl font-black uppercase tracking-tight">Baixa em Lote</h2>
+              <button onClick={() => setIsBatchPaymentModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleBatchPaymentSubmit} className="p-8 space-y-6">
+              <p className="text-sm font-medium text-slate-500">
+                Você selecionou <strong>{selectedIds.length}</strong> mensalidades para dar baixa.
+              </p>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Data do Pagamento</label>
+                  <Input 
+                    type="date" required
+                    className="h-12 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-emerald-500 font-bold"
+                    value={batchPaymentData.paymentDate}
+                    onChange={(e) => setBatchPaymentData({...batchPaymentData, paymentDate: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {(['Pix', 'Dinheiro', 'Cartão', 'Permuta de Serviço'] as const).map(method => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setBatchPaymentData({...batchPaymentData, paymentMethod: method})}
+                        className={cn(
+                          "h-14 rounded-xl text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 transition-all p-1 text-center",
+                          batchPaymentData.paymentMethod === method 
+                            ? "bg-emerald-600 border-emerald-600 text-white" 
+                            : "bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200"
+                        )}
+                      >
+                        {method === 'Pix' && <QrCode size={16} />}
+                        {method === 'Dinheiro' && <Banknote size={16} />}
+                        {method === 'Cartão' && <CreditCard size={16} />}
+                        {method === 'Permuta de Serviço' && <RefreshCcw size={16} />}
+                        {method === 'Permuta de Serviço' ? 'Permuta' : method}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" className="flex-1 h-14 rounded-2xl font-bold" onClick={() => setIsBatchPaymentModalOpen(false)}>Cancelar</Button>
+                <Button type="submit" className="flex-1 h-14 bg-emerald-600 hover:bg-emerald-700 rounded-2xl font-black uppercase tracking-widest text-white">
+                  Confirmar
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Relatório de Mensalidades Recebidas */}
       {isReceiptReportOpen && (
         <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex flex-col items-center p-4 md:p-8 print:p-0 print:bg-white print:backdrop-blur-none print:static print-overlay-container">
@@ -1035,7 +1137,7 @@ export const MonthlyFees: React.FC = () => {
                   const paidInMonth = installments.filter(i => i.status === 'Pago' && i.paymentDate?.startsWith(reportMonthFilter));
                   const totalPix = paidInMonth.filter(i => i.paymentMethod === 'Pix').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
                   const totalDinheiro = paidInMonth.filter(i => i.paymentMethod === 'Dinheiro').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
-                  const totalCartao = paidInMonth.filter(i => i.paymentMethod === 'Cartão' || i.paymentMethod === 'Cartão Crédito').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
+                  const totalCartao = paidInMonth.filter(i => i.paymentMethod === 'Cartão').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
                   const totalPermuta = paidInMonth.filter(i => i.paymentMethod === 'Permuta de Serviço').reduce((acc, curr) => acc + (curr.finalPaidValue || 0), 0);
                   const totalGeral = totalPix + totalDinheiro + totalCartao;
 
@@ -1160,18 +1262,34 @@ export const MonthlyFees: React.FC = () => {
         <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-100">
           <Calendar size={18} className="text-slate-400 ml-2" />
           <select 
-            className="bg-transparent border-none outline-none font-bold text-slate-600 text-sm p-2"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            className="bg-transparent border-none outline-none font-bold text-slate-600 text-sm p-2 w-32"
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
           >
             <option value="">Todos os Meses</option>
-            {/* Order filters: Show current year and some months before/after */}
-            {Array.from({ length: 18 }).map((_, i) => {
-              const d = new Date(new Date().getFullYear(), 0, 1); // Start Jan of current year
-              d.setMonth(d.getMonth() + i); // Go forward 18 months
-              const val = d.toISOString().slice(0, 7);
-              const label = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-              return <option key={val} value={val}>{label}</option>;
+            <option value="01">Janeiro</option>
+            <option value="02">Fevereiro</option>
+            <option value="03">Março</option>
+            <option value="04">Abril</option>
+            <option value="05">Maio</option>
+            <option value="06">Junho</option>
+            <option value="07">Julho</option>
+            <option value="08">Agosto</option>
+            <option value="09">Setembro</option>
+            <option value="10">Outubro</option>
+            <option value="11">Novembro</option>
+            <option value="12">Dezembro</option>
+          </select>
+          <div className="w-px h-6 bg-slate-200"></div>
+          <select 
+            className="bg-transparent border-none outline-none font-bold text-slate-600 text-sm p-2 w-24"
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+          >
+            <option value="">Todos os Anos</option>
+            {Array.from({ length: 6 }).map((_, i) => {
+              const year = new Date().getFullYear() - 2 + i;
+              return <option key={year} value={year}>{year}</option>;
             })}
           </select>
         </div>
@@ -1188,6 +1306,14 @@ export const MonthlyFees: React.FC = () => {
               className="h-10 border-slate-200 text-slate-600 font-bold text-xs uppercase"
             >
               Cobrar via WhatsApp
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => setIsBatchPaymentModalOpen(true)}
+              className="h-10 border-slate-200 text-slate-600 font-bold text-xs uppercase"
+            >
+              Baixa em Lote
             </Button>
             <Button 
               size="sm" 
@@ -1253,7 +1379,12 @@ export const MonthlyFees: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell className="p-6">
-                      <p className="font-black text-navy uppercase text-sm tracking-tight">{inst.studentName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-black text-navy uppercase text-sm tracking-tight">{inst.studentName}</p>
+                        {(inst as any).isAcordo && (
+                          <Badge className="bg-orange-50 text-orange-600 border-orange-200 text-[9px] uppercase font-black uppercase tracking-widest px-2 py-0">Acordo</Badge>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 font-mono">{(inst as any).studentMatricula || 'N/A'}</p>
                     </TableCell>
                     <TableCell className="p-6">
