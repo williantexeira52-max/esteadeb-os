@@ -44,7 +44,8 @@ import {
   FileText,
   Award,
   Printer,
-  ChevronRight
+  ChevronRight,
+  Edit
 } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
 import { ContractAutomation } from './ContractAutomation';
@@ -297,6 +298,13 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
     return day;
   };
 
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [firstInstCustom, setFirstInstCustom] = useState(false);
+  const [firstInstDiscount, setFirstInstDiscount] = useState(0);
+
+  const [editingParcel, setEditingParcel] = useState<any>(null);
+  const [editParcelData, setEditParcelData] = useState({ dueDate: '', baseValue: 0, discount: 0, finalPaidValue: 0 });
+
   const handleGenerateInstallments = async () => {
     if (!window.confirm(`Deseja gerar ${newInstallmentConfig.quantity} novas parcelas para este aluno?`)) return;
     setIsGeneratingInstallments(true);
@@ -327,6 +335,10 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
         }
         const parcelRef = doc(collection(db, 'financial_installments'));
         
+        const isFirst = i === 1;
+        const currentDiscount = isFirst && firstInstCustom ? firstInstDiscount : Number(newInstallmentConfig.discountValue);
+        const finalValue = Number(newInstallmentConfig.baseValue) - currentDiscount;
+
         batch.set(parcelRef, {
           studentId: student.id,
           studentName: student.name,
@@ -337,8 +349,8 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
           parcelNumber: parcels.length + i,
           totalParcels: parcels.length + newInstallmentConfig.quantity,
           baseValue: Number(newInstallmentConfig.baseValue),
-          discount: Number(newInstallmentConfig.discountValue),
-          finalPaidValue: Number(newInstallmentConfig.baseValue) - Number(newInstallmentConfig.discountValue),
+          discount: currentDiscount,
+          finalPaidValue: finalValue,
           nomeDesconto: student.nomeDesconto || 'DESCONTO PADRÃO',
           dueDate: dueDate.toISOString().split('T')[0],
           status: 'Pendente',
@@ -347,10 +359,28 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
         });
       }
       await batch.commit();
+      setIsGenerateModalOpen(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'financial_installments');
     } finally {
       setIsGeneratingInstallments(false);
+    }
+  };
+
+  const handleUpdateParcel = async () => {
+    if (!editingParcel) return;
+    try {
+      const parcelRef = doc(db, 'financial_installments', editingParcel.id);
+      await updateDoc(parcelRef, {
+        dueDate: editParcelData.dueDate,
+        baseValue: Number(editParcelData.baseValue),
+        discount: Number(editParcelData.discount),
+        finalPaidValue: Number(editParcelData.baseValue) - Number(editParcelData.discount),
+        updatedAt: serverTimestamp()
+      });
+      setEditingParcel(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'financial_installments');
     }
   };
 
@@ -1166,6 +1196,13 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                 <CreditCard className="text-petrol" size={20} /> Extrato Financeiro
               </CardTitle>
               <div className="flex items-center gap-3">
+                <Button 
+                  onClick={() => setIsGenerateModalOpen(true)}
+                  className="bg-petrol hover:bg-petrol-dark text-white rounded-xl gap-2 font-bold uppercase text-[10px] tracking-widest h-10 px-4 shadow-sm"
+                >
+                  <Plus size={16} />
+                  Novas Parcelas
+                </Button>
                 <div className="flex items-center gap-2">
                   <Label className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Alterar Padrão:</Label>
                   <Select 
@@ -1251,6 +1288,24 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                           )}>
                             {p.status}
                           </Badge>
+                          {p.status === 'Pendente' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                setEditingParcel(p);
+                                setEditParcelData({
+                                  dueDate: p.dueDate,
+                                  baseValue: p.baseValue,
+                                  discount: p.discount,
+                                  finalPaidValue: p.finalPaidValue || (p.baseValue - p.discount)
+                                });
+                              }}
+                            >
+                              <Edit size={14} />
+                            </Button>
+                          )}
                           <Button 
                             variant="ghost" 
                             size="icon" 
@@ -1267,6 +1322,117 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
               </ScrollArea>
             </CardContent>
           </Card>
+
+          {/* Edit Parcel Modal */}
+          {editingParcel && (
+            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+              <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="bg-blue-600 p-6 text-white flex justify-between items-center">
+                  <h3 className="font-black uppercase tracking-tight">Editar Parcela {editingParcel.parcelNumber}</h3>
+                  <button onClick={() => setEditingParcel(null)}><X size={24} /></button>
+                </div>
+                <div className="p-8 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Vencimento</Label>
+                    <Input type="date" value={editParcelData.dueDate} onChange={e => setEditParcelData({...editParcelData, dueDate: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valor Base (R$)</Label>
+                    <Input type="number" value={editParcelData.baseValue} onChange={e => setEditParcelData({...editParcelData, baseValue: Number(e.target.value)})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Desconto (R$)</Label>
+                    <Input type="number" value={editParcelData.discount} onChange={e => setEditParcelData({...editParcelData, discount: Number(e.target.value)})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valor Líquido</Label>
+                    <div className="font-mono text-xl font-bold bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      R$ {(editParcelData.baseValue - editParcelData.discount).toFixed(2)}
+                    </div>
+                  </div>
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700 mt-4 h-12 rounded-xl font-black uppercase tracking-widest" onClick={handleUpdateParcel}>
+                    Salvar Alterações
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Generate Installments Modal */}
+          {isGenerateModalOpen && (
+            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+              <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="bg-petrol p-6 text-white flex justify-between items-center">
+                  <h3 className="font-black uppercase tracking-tight">Gerar Novas Parcelas</h3>
+                  <button onClick={() => setIsGenerateModalOpen(false)}><X size={24} /></button>
+                </div>
+                <div className="p-8 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Quantidade</Label>
+                      <Input type="number" value={newInstallmentConfig.quantity} onChange={e => setNewInstallmentConfig({...newInstallmentConfig, quantity: Number(e.target.value)})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Vencimento Padrão</Label>
+                      <Select value={newInstallmentConfig.dueDayPattern} onValueChange={v => setNewInstallmentConfig({...newInstallmentConfig, dueDayPattern: v})}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5_UTIL">5º Dia Útil</SelectItem>
+                          <SelectItem value="10">Dia 10</SelectItem>
+                          <SelectItem value="20">Dia 20</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Valor Base (R$)</Label>
+                      <Input type="number" value={newInstallmentConfig.baseValue} onChange={e => setNewInstallmentConfig({...newInstallmentConfig, baseValue: Number(e.target.value)})} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Desconto Fixo (R$)</Label>
+                      <Input type="number" value={newInstallmentConfig.discountValue} onChange={e => setNewInstallmentConfig({...newInstallmentConfig, discountValue: Number(e.target.value)})} />
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl space-y-3 mt-4">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        id="customFirst" 
+                        checked={firstInstCustom} 
+                        onChange={(e) => setFirstInstCustom(e.target.checked)} 
+                        className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <label htmlFor="customFirst" className="text-sm font-bold text-emerald-900 cursor-pointer">
+                        Desconto diferenciado na 1ª Parcela (Matrícula)
+                      </label>
+                    </div>
+                    {firstInstCustom && (
+                      <div className="space-y-2 pl-6">
+                        <Label className="text-emerald-800">Desconto apenas na 1ª Parcela (R$)</Label>
+                        <Input 
+                          type="number" 
+                          value={firstInstDiscount} 
+                          onChange={e => setFirstInstDiscount(Number(e.target.value))} 
+                          className="border-emerald-200 focus-visible:ring-emerald-500 bg-white"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <Button 
+                    className="w-full bg-petrol hover:bg-petrol-dark mt-4 h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-petrol/20 flex items-center justify-center gap-2" 
+                    onClick={handleGenerateInstallments}
+                    disabled={isGeneratingInstallments}
+                  >
+                    {isGeneratingInstallments ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                    Confirmar e Gerar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="ged" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">

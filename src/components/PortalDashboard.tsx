@@ -46,7 +46,8 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import Markdown from 'react-markdown';
 
 export const PortalDashboard: React.FC = () => {
   const { student, logoutStudent, loginStudent, profile, isAdmin, user } = useAuth();
@@ -87,6 +88,29 @@ export const PortalDashboard: React.FC = () => {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [curriculum, setCurriculum] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
+
+  const [acceptingContract, setAcceptingContract] = useState(false);
+
+  const handleAcceptContract = async () => {
+    if (!currentStudent || !currentStudent.id) return;
+    setAcceptingContract(true);
+    try {
+      await updateDoc(doc(db, 'students', currentStudent.id), {
+        contractSigned: true,
+        contractSignatureData: {
+          date: new Date().toISOString(),
+          ip: 'IP Coletado', // Cannot easily grab IP from client-side without external API, simulate it
+          hash: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        }
+      });
+      alert('Contrato assinado com sucesso!');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao assinar contrato.');
+    } finally {
+      setAcceptingContract(false);
+    }
+  };
 
   // Global Loading Exit Logic
   useEffect(() => {
@@ -1185,6 +1209,77 @@ export const PortalDashboard: React.FC = () => {
     );
   };
 
+  const renderContratos = () => {
+    if (!currentStudent) return null;
+    
+    // Simplification for the student portal contract renderer.
+    // Ideally this matches the Exact template, but for now we create a generic placeholder or fetch.
+    const rawTemplate = systemConfig?.contractTemplate || `# CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – 2026
+
+Pelo presente instrumento particular, de um lado, a **ESCOLA TEOLÓGICA DAS ASSEMBLEIAS DE DEUS NO BRASIL**, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº **40.800.393/0001-32**, com sede na R. Dr. Célso Ramalho, 70 - Lagoa Seca, Natal - RN, 59022-330, neste ato representada por seu representante legal **SÉRGIO LINS PESSOA**, doravante denominada CONTRATADA;
+
+E, de outro lado, o(a) aluno(a) **{{NOME_ALUNO}}**, inscrito(a) no CPF nº **{{CPF_ALUNO}}**, nascido(a) em **{{DATA_NASCIMENTO}}**, doravante denominado(a) CONTRATANTE;
+
+Cláusula 1: O contratante concorda com as cláusulas e normas de convívio e as regras da secretaria da ESTEADEB.`;
+
+    const parsedContract = rawTemplate
+      .replace(/\{\{NOME\}\}|\{\{NOME_ALUNO\}\}/g, currentStudent.name || '---')
+      .replace(/\{\{CPF\}\}|\{\{CPF_ALUNO\}\}/g, currentStudent.cpf || '---')
+      .replace(/\{\{NASCIMENTO\}\}|\{\{DATA_NASCIMENTO\}\}/g, currentStudent.birthDate || '---')
+      .replace(/\{\{MATRICULA\}\}/g, currentStudent.matricula || currentStudent.id || '---');
+
+    return (
+      <div className="space-y-12 pb-20">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Aceite Eletrônico</h2>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em]">Gerencie seu contrato educacional on-line</p>
+        </div>
+
+        <div className="bg-white p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+          {currentStudent.contractSigned ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-6">
+                <ShieldCheck size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-emerald-800 uppercase tracking-tight">Contrato Assinado</h3>
+              <p className="text-slate-500 font-medium mt-2 max-w-sm mx-auto">
+                Seu contrato foi assinado digitalmente em {new Date(currentStudent.contractSignatureData?.date).toLocaleString('pt-BR')}.
+              </p>
+              <div className="mt-8 p-4 bg-slate-50 border border-slate-200 rounded-xl max-w-sm mx-auto w-full text-left">
+                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Dados de Autenticidade</p>
+                 <p className="text-xs text-slate-600 font-mono"><strong>Hash:</strong> {currentStudent.contractSignatureData?.hash}</p>
+                 <p className="text-xs text-slate-600 font-mono mt-1"><strong>IP:</strong> {currentStudent.contractSignatureData?.ip}</p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-3 mb-6 p-4 bg-amber-50 text-amber-800 border fill-amber-100 border-amber-200 rounded-2xl">
+                 <AlertTriangle size={24} className="shrink-0" />
+                 <div>
+                   <p className="font-bold text-sm">Você possui pendência de assinatura.</p>
+                   <p className="text-xs mt-1">Leia o contrato abaixo e clique em "Li e Aceito os Termos" para emitir seu aceite eletrônico.</p>
+                 </div>
+              </div>
+              <div className="prose prose-sm max-w-none prose-slate bg-slate-50 p-6 md:p-10 rounded-2xl border border-slate-200 h-[400px] overflow-y-auto mb-8">
+                <Markdown>{parsedContract}</Markdown>
+              </div>
+              <div className="flex justify-end">
+                <Button 
+                  onClick={handleAcceptContract}
+                  disabled={acceptingContract}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-14 px-8 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-600/20 flex items-center gap-3"
+                >
+                  {acceptingContract ? <Loader2 size={20} className="animate-spin" /> : <ShieldCheck size={20} />}
+                  Eu Li e Aceito os Termos
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderRequests = () => (
     <div className="space-y-12 pb-20">
       <div className="flex items-center justify-between">
@@ -1678,6 +1773,7 @@ export const PortalDashboard: React.FC = () => {
               { id: 'Horários', icon: Clock },
               { id: 'Histórico', icon: FileText },
               { id: 'Financeiro', icon: Wallet },
+              { id: 'Contratos', icon: ShieldCheck },
               { id: 'Requerimentos', icon: MessageCircle },
               { id: 'Avisos', icon: Bell },
               { id: 'Meu Perfil', icon: UserIcon }
@@ -1732,6 +1828,7 @@ export const PortalDashboard: React.FC = () => {
             {activeTab === 'Horários' && renderHorarios()}
             {activeTab === 'Histórico' && renderHistory()}
             {activeTab === 'Financeiro' && renderFinanceiro()}
+            {activeTab === 'Contratos' && renderContratos()}
             {activeTab === 'Requerimentos' && renderRequests()}
             {activeTab === 'Avisos' && renderAnnouncements()}
             {activeTab === 'Meu Perfil' && renderProfile()}

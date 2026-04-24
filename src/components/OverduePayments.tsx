@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { 
   collection, 
   query, 
@@ -79,6 +80,11 @@ export const OverduePayments: React.FC = () => {
   const [allPending, setAllPending] = useState<OverdueInstallment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [visibleCount, setVisibleCount] = useState(20);
+  
+  const handleLoadMore = () => {
+    setVisibleCount(prev => prev + 20);
+  };
   const [daysFilter, setDaysFilter] = useState<number | 'all'>('all');
   const [includeAllPending, setIncludeAllPending] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -365,33 +371,22 @@ export const OverduePayments: React.FC = () => {
     }, { totalOverdue: 0, count: 0 });
   }, [filtered]);
 
-  const handleExportCsv = () => {
-    const csvContent = [
-      ['Aluno', 'Telefone', 'Vencimento', 'Atraso (Dias)', 'Valor Original', 'Multa', 'Juros', 'Total Acumulado'].join(','),
-      ...filtered.map(inst => {
-        const { total, daysOverdue, fine, interest } = calculatePenalties(inst);
-        const originalNet = inst.baseValue - inst.discount;
-        return [
-          `"${inst.studentName.trim()}"`,
-          `"${inst.studentPhone || ''}"`,
-          inst.dueDate,
-          daysOverdue,
-          originalNet,
-          fine.toFixed(2),
-          interest.toFixed(2),
-          total.toFixed(2)
-        ].join(',');
-      })
-    ].join('\n');
+  const handleExportExcel = () => {
+    const data = filtered.map(inst => {
+      const { total, daysOverdue } = calculatePenalties(inst);
+      return {
+        'Nome do Aluno': inst.studentName.trim(),
+        'Telefone/WhatsApp': inst.studentPhone || '',
+        'Status': daysOverdue > 0 ? 'Atrasado' : 'Pendente',
+        'Dias de Atraso': daysOverdue,
+        'Valor da Dívida': Number(total.toFixed(2))
+      };
+    });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `relatorio_inadimplencia_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inadimplentes - Call Center");
+    XLSX.writeFile(workbook, `Inadimplentes_CallCenter_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -415,11 +410,11 @@ export const OverduePayments: React.FC = () => {
             </Button>
           )}
           <Button 
-            onClick={handleExportCsv}
+            onClick={handleExportExcel}
             variant="outline" 
             className="h-14 px-6 rounded-2xl border-2 border-slate-200 text-slate-600 font-black uppercase tracking-widest flex items-center gap-2"
           >
-            <Download size={20} /> Exportar CSV
+            <Download size={20} /> Excel (Call Center)
           </Button>
           <Button 
             onClick={handleMassBilling}
@@ -681,7 +676,7 @@ export const OverduePayments: React.FC = () => {
                 <td colSpan={6} className="p-20 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">Nenhum registro de inadimplência encontrado.</td>
               </TableRow>
             ) : (
-              filtered.map((inst) => {
+              filtered.slice(0, visibleCount).map((inst) => {
                 const { total, daysOverdue, fine, interest } = calculatePenalties(inst);
                 return (
                   <TableRow key={inst.id} className={cn(
@@ -787,6 +782,18 @@ export const OverduePayments: React.FC = () => {
             )}
           </TableBody>
         </Table>
+        
+        {visibleCount < filtered.length && (
+          <div className="p-6 flex justify-center border-t border-slate-100">
+            <Button 
+              variant="outline" 
+              onClick={handleLoadMore}
+              className="h-10 px-8 rounded-xl font-bold uppercase tracking-widest text-[#2B3A67] border-[#2B3A67]/20 hover:bg-[#2B3A67]/5"
+            >
+              Carregar Mais Resultados
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

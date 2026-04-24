@@ -157,6 +157,11 @@ export const Students: React.FC = () => {
   }, [newStudent.cep]);
 
   const [otherNucleiCount, setOtherNucleiCount] = useState<{[key: string]: number}>({});
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const handleLoadMore = () => {
+    setVisibleCount(prev => prev + 20);
+  };
 
   useEffect(() => {
     if (!profile || !user) return;
@@ -955,7 +960,7 @@ export const Students: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredStudents.map((student) => (
+                filteredStudents.slice(0, visibleCount).map((student) => (
                   <TableRow key={student.id} className="hover:bg-gray-50 transition-colors group">
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -1024,7 +1029,14 @@ export const Students: React.FC = () => {
                                   <AvatarFallback className="bg-petrol text-white">{student.name.charAt(0)}</AvatarFallback>
                                 </Avatar>
                                 <div>
-                                  <p>{student.name}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p>{student.name}</p>
+                                    {student.contractSigned && (
+                                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-200 font-bold uppercase tracking-widest text-[9px] px-2 py-0.5">
+                                        Contrato Assinado Digitalmente
+                                      </Badge>
+                                    )}
+                                  </div>
                                   <p className="text-xs text-gray-400 font-mono uppercase tracking-widest">Dossiê Digital: {student.matricula}</p>
                                 </div>
                               </DialogTitle>
@@ -1103,6 +1115,18 @@ export const Students: React.FC = () => {
               )}
             </TableBody>
           </Table>
+          
+          {visibleCount < filteredStudents.length && (
+            <div className="p-6 flex justify-center border-t border-slate-100">
+              <Button 
+                variant="outline" 
+                onClick={handleLoadMore}
+                className="h-10 px-8 rounded-xl font-bold uppercase tracking-widest text-[#2B3A67] border-[#2B3A67]/20 hover:bg-[#2B3A67]/5"
+              >
+                Carregar Mais Resultados
+              </Button>
+            </div>
+          )}
         </ScrollArea>
       </div>
     </div>

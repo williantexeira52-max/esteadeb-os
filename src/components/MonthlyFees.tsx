@@ -73,6 +73,12 @@ export const MonthlyFees: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterMonth, setFilterMonth] = useState('');
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState(25);
+  
+  const handleLoadMore = () => {
+    setVisibleCount(prev => prev + 25);
+  };
   const [isBatchDateModalOpen, setIsBatchDateModalOpen] = useState(false);
   const [isReceiptReportOpen, setIsReceiptReportOpen] = useState(false);
   const [reportMonthFilter, setReportMonthFilter] = useState(new Date().toISOString().substring(0, 7));
@@ -744,9 +750,18 @@ export const MonthlyFees: React.FC = () => {
                         String((inst as any).studentMatricula || '').includes(searchTerm);
       const matchYear = filterYear ? inst.dueDate.startsWith(filterYear) : true;
       const matchMonth = filterMonth ? inst.dueDate.slice(5, 7) === filterMonth : true;
-      return matchSearch && matchYear && matchMonth;
+      
+      let matchStatus = true;
+      if (filterStatus !== 'all') {
+        const { isLate } = calculatePenalties(inst);
+        if (filterStatus === 'Pago' && inst.status !== 'Pago') matchStatus = false;
+        if (filterStatus === 'Pendente' && (inst.status === 'Pago' || isLate)) matchStatus = false;
+        if (filterStatus === 'Atrasado' && !isLate) matchStatus = false;
+      }
+      
+      return matchSearch && matchYear && matchMonth && matchStatus;
     });
-  }, [installments, searchTerm, filterMonth, filterYear]);
+  }, [installments, searchTerm, filterMonth, filterYear, filterStatus]);
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 bg-slate-50 min-h-screen relative">
@@ -1292,6 +1307,17 @@ export const MonthlyFees: React.FC = () => {
               return <option key={year} value={year}>{year}</option>;
             })}
           </select>
+          <div className="w-px h-6 bg-slate-200"></div>
+          <select 
+            className="bg-transparent border-none outline-none font-bold text-slate-600 text-sm p-2 w-32"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="all">Todos Status</option>
+            <option value="Pendente">Pendentes</option>
+            <option value="Pago">Pagos</option>
+            <option value="Atrasado">Atrasados</option>
+          </select>
         </div>
 
         {selectedIds.length > 0 && (
@@ -1361,7 +1387,7 @@ export const MonthlyFees: React.FC = () => {
                 <td colSpan={6} className="p-20 text-center text-slate-300 font-bold uppercase text-xs tracking-widest">Nenhuma mensalidade encontrada.</td>
               </TableRow>
             ) : (
-              filteredInstallments.map((inst) => {
+              filteredInstallments.slice(0, visibleCount).map((inst) => {
                 const { total, isLate } = calculatePenalties(inst);
                 const originalNet = inst.baseValue - inst.discount;
                 
@@ -1475,6 +1501,18 @@ export const MonthlyFees: React.FC = () => {
             )}
           </TableBody>
         </Table>
+
+        {visibleCount < filteredInstallments.length && (
+          <div className="p-6 flex justify-center border-t border-slate-100">
+            <Button 
+              variant="outline" 
+              onClick={handleLoadMore}
+              className="h-10 px-8 rounded-xl font-bold uppercase tracking-widest text-[#2B3A67] border-[#2B3A67]/20 hover:bg-[#2B3A67]/5"
+            >
+              Carregar Mais Mensalidades
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

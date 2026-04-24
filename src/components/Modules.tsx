@@ -489,9 +489,10 @@ export const Modules: React.FC = () => {
             { key: 'moduleNumber', label: 'Modulo', type: 'number' },
             { key: 'academicYear', label: 'Ano_Letivo' },
             { key: 'semester', label: 'Semestre' },
+            { key: 'subjects', label: 'Disciplinas' },
             { key: 'startDate', label: 'Data_Inicial' },
             { key: 'endDate', label: 'Data_Termino' },
-            { key: 'professorsNotes', label: 'Professores' }
+            { key: 'professorsNotes', label: 'Professores (Opcional)' }
           ]}
           templateHeaders={[
             { key: 'classId', label: 'ID_Turma' },
@@ -502,7 +503,7 @@ export const Modules: React.FC = () => {
             { key: 'subjects', label: 'Disciplinas' },
             { key: 'startDate', label: 'Data_Inicial' },
             { key: 'endDate', label: 'Data_Termino' },
-            { key: 'professorsNotes', label: 'Professores_Anotacoes' }
+            { key: 'professorsNotes', label: 'Professores (Opcional)' }
           ]}
           transformRow={(row) => {
             const selectedClass = classes.find(c => c.id === row.classId);
