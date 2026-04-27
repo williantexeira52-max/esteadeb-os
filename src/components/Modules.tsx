@@ -153,7 +153,11 @@ export const Modules: React.FC = () => {
       orderBy('name', 'asc')
     );
     const unsubscribeGrades = onSnapshot(qGrades, (snapshot) => {
-      setGrades(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const rawGrades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const uniqueGrades = rawGrades.filter((v: any, i: number, a: any[]) => 
+        a.findIndex((t: any) => (t.name || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "") === (v.name || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "")) === i
+      );
+      setGrades(uniqueGrades);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'grades');
     });
@@ -615,10 +619,12 @@ export const Modules: React.FC = () => {
             }
 
             // Handle subjects if provided as comma-separated string in Excel
-            let subjects = row.subjects || row.Disciplinas;
+            let subjects = row.subjects || row.Disciplinas || row.Disciplinas_Separadas_Por_Virgula;
             if (typeof subjects === 'string') {
-              subjects = subjects.split(',').map(s => s.trim()).filter(Boolean);
-            } else if (!Array.isArray(subjects)) {
+              subjects = Array.from(new Set(subjects.split(',').map(s => s.trim()).filter(Boolean)));
+            } else if (Array.isArray(subjects)) {
+              subjects = Array.from(new Set(subjects.map(s => String(s).trim()).filter(Boolean)));
+            } else {
               subjects = [];
             }
 

@@ -95,7 +95,8 @@ export const OverduePayments: React.FC = () => {
   const [acordoData, setAcordoData] = useState({
     numParcels: 1,
     firstDueDate: new Date().toISOString().split('T')[0],
-    totalValue: 0
+    totalValue: 0,
+    downPayment: 0
   });
 
   const calculatePenalties = (inst: OverdueInstallment) => {
@@ -121,8 +122,8 @@ export const OverduePayments: React.FC = () => {
   };
 
   const selectedInstallments = useMemo(() => 
-    installments.filter(inst => selectedIds.has(inst.id)),
-  [installments, selectedIds]);
+    allPending.filter(inst => selectedIds.has(inst.id)),
+  [allPending, selectedIds]);
 
   const selectedTotal = useMemo(() => {
     return selectedInstallments.reduce((acc, inst) => {
@@ -311,12 +312,21 @@ export const OverduePayments: React.FC = () => {
 
       // 2. Create new installments
       const student = selectedInstallments[0]; 
-      const parcelValue = acordoData.totalValue / acordoData.numParcels;
+      
+      const hasDownPayment = acordoData.downPayment > 0;
+      const parcelsExDownPayment = hasDownPayment ? Math.max(1, acordoData.numParcels - 1) : acordoData.numParcels;
+      const amountToDivide = hasDownPayment ? Math.max(0, acordoData.totalValue - acordoData.downPayment) : acordoData.totalValue;
+      const parcelValue = amountToDivide / parcelsExDownPayment;
       
       for (let i = 0; i < acordoData.numParcels; i++) {
         const dueDate = new Date(acordoData.firstDueDate);
         dueDate.setMonth(dueDate.getMonth() + i);
         
+        let currentParcelValue = parcelValue;
+        if (hasDownPayment) {
+          currentParcelValue = i === 0 ? acordoData.downPayment : parcelValue;
+        }
+
         const newDocRef = doc(collection(db, 'financial_installments'));
         batch.set(newDocRef, {
           studentId: student.studentId,
@@ -324,7 +334,7 @@ export const OverduePayments: React.FC = () => {
           studentPhone: student.studentPhone || '',
           studentEmail: student.studentEmail || '',
           studentMatricula: (student as any).studentMatricula || '',
-          baseValue: parcelValue,
+          baseValue: currentParcelValue,
           discount: 0,
           dueDate: dueDate.toISOString().split('T')[0],
           status: 'Pendente',
@@ -494,14 +504,26 @@ export const OverduePayments: React.FC = () => {
             ) : (
               <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Valor Total do Acordo (R$)</Label>
-                    <Input 
-                      type="number"
-                      className="h-14 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-black text-lg"
-                      value={acordoData.totalValue}
-                      onChange={(e) => setAcordoData({...acordoData, totalValue: parseFloat(e.target.value) || 0})}
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Valor Total (R$)</Label>
+                      <Input 
+                        type="number"
+                        className="h-14 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-black text-lg"
+                        value={acordoData.totalValue}
+                        onChange={(e) => setAcordoData({...acordoData, totalValue: parseFloat(e.target.value) || 0})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Entrada (R$)</Label>
+                      <Input 
+                        type="number"
+                        min="0"
+                        className="h-14 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-petrol font-bold text-lg text-emerald-600"
+                        value={acordoData.downPayment}
+                        onChange={(e) => setAcordoData({...acordoData, downPayment: parseFloat(e.target.value) || 0})}
+                      />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -527,10 +549,16 @@ export const OverduePayments: React.FC = () => {
                 </div>
 
                 <div className="bg-petrol/5 p-6 rounded-3xl border border-petrol/10 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-black text-petrol uppercase tracking-widest">Valor por Parcela:</span>
-                    <span className="text-xl font-black text-petrol">
-                      {formatCurrency(acordoData.totalValue / (acordoData.numParcels || 1))}
+                  <div className="flex justify-between items-center text-petrol">
+                    <span className="text-xs font-black uppercase tracking-widest text-petrol/70">
+                      {acordoData.downPayment > 0 && acordoData.numParcels > 1 ? `Valor de ${acordoData.numParcels - 1} Parcelas:` : 'Valor por Parcela:'}
+                    </span>
+                    <span className="text-xl font-black">
+                      {formatCurrency(
+                        acordoData.downPayment > 0 && acordoData.numParcels > 1
+                          ? Math.max(0, acordoData.totalValue - acordoData.downPayment) / (acordoData.numParcels - 1)
+                          : acordoData.totalValue / Math.max(1, acordoData.numParcels)
+                      )}
                     </span>
                   </div>
                 </div>

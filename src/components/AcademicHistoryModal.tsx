@@ -93,9 +93,15 @@ export const AcademicHistoryModal: React.FC<AcademicHistoryModalProps> = ({
         snapDisciplinas = await getDocs(collection(db, 'grades'));
       }
       
+      let rawDisciplinas = snapDisciplinas.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Deduplicate disciplines matching the same sanitized name
+      const uniqueDisciplinas = rawDisciplinas.filter((v: any, i, a) => 
+        a.findIndex((t: any) => t.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "") === v.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "")) === i
+      );
+
       // Sort in-memory to avoid composite index requirements
-      const allDisciplinas = snapDisciplinas.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
+      const allDisciplinas = uniqueDisciplinas
         .sort((a: any, b: any) => {
           if (a.year !== b.year) return String(a.year).localeCompare(String(b.year));
           return Number(a.module) - Number(b.module);

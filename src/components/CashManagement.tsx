@@ -84,6 +84,7 @@ interface Reconciliation {
   difference: number;
   timestamp: any;
   checkedBy: string;
+  denominations?: Record<string, number>;
 }
 
 export const CashManagement: React.FC = () => {
@@ -128,13 +129,8 @@ export const CashManagement: React.FC = () => {
     '1.00': 0, '0.50': 0, '0.25': 0, '0.10': 0, '0.05': 0
   });
 
-  // Reset denominations when tab changes to ensure independent counts
-  useEffect(() => {
-    setDenominations({
-      '200': 0, '100': 0, '50': 0, '20': 0, '10': 0, '5': 0, '2': 0,
-      '1.00': 0, '0.50': 0, '0.25': 0, '0.10': 0, '0.05': 0
-    });
-  }, [activeTab]);
+  // We will load the denominations directly from the last reconciliation document
+  // instead of resetting them to zero.
 
   const physicalTotal = useMemo(() => {
     return Object.entries(denominations).reduce((acc: number, entry) => {
@@ -190,9 +186,24 @@ export const CashManagement: React.FC = () => {
 
     const unsubscribeRecon = onSnapshot(qRecon, (snapshot) => {
       if (!snapshot.empty) {
-        setLastReconciliation({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Reconciliation);
+        const data = snapshot.docs[0].data();
+        setLastReconciliation({ id: snapshot.docs[0].id, ...data } as Reconciliation);
+        
+        // Restore denominations if they were saved in the last reconciliation
+        if (data.denominations) {
+          setDenominations(data.denominations);
+        } else {
+          setDenominations({
+            '200': 0, '100': 0, '50': 0, '20': 0, '10': 0, '5': 0, '2': 0,
+            '1.00': 0, '0.50': 0, '0.25': 0, '0.10': 0, '0.05': 0
+          });
+        }
       } else {
         setLastReconciliation(null);
+        setDenominations({
+          '200': 0, '100': 0, '50': 0, '20': 0, '10': 0, '5': 0, '2': 0,
+          '1.00': 0, '0.50': 0, '0.25': 0, '0.10': 0, '0.05': 0
+        });
       }
     });
 
@@ -208,7 +219,6 @@ export const CashManagement: React.FC = () => {
 
     const qExtras = query(
       collection(db, 'financial_extras'), 
-      where('nucleoId', '==', nucleo),
       orderBy('name', 'asc')
     );
     const unsubscribeExtras = onSnapshot(qExtras, (snapshot) => {
@@ -452,6 +462,7 @@ export const CashManagement: React.FC = () => {
         physicalAmount: physicalTotal,
         systemBalance: totals.balance,
         difference,
+        denominations, // Added so we securely persist the counted bills
         poloId: profile?.poloId || null,
         poloName: profile?.poloName || 'MATRIZ',
         timestamp: serverTimestamp(),
@@ -459,10 +470,7 @@ export const CashManagement: React.FC = () => {
       });
       addToast('Conferência realizada com sucesso!', 'success');
       setIsReconciliationModalOpen(false);
-      setDenominations({
-        '200': 0, '100': 0, '50': 0, '20': 0, '10': 0, '5': 0, '2': 0,
-        '1.00': 0, '0.50': 0, '0.25': 0, '0.10': 0, '0.05': 0
-      });
+      // Removed setDenominations reset so it stays populated
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, reconCollectionName);
       addToast('Erro ao salvar conferência.', 'error');

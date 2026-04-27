@@ -494,10 +494,11 @@ export const Classes: React.FC = () => {
     
     classModules.forEach(mod => {
       if (mod.subjects) {
-        mod.subjects.forEach((sub: string) => {
-          completedSubjects.add(sub.toLowerCase().trim());
+        Array.from(new Set(mod.subjects)).forEach((sub: unknown) => {
+          const subjectName = String(sub);
+          completedSubjects.add(subjectName.toLowerCase().trim());
           completedList.push({
-            name: sub,
+            name: subjectName,
             period: `${mod.academicYear} / ${mod.semester}`,
             professor: mod.professorsNotes || '--',
             moduleId: mod.id,
@@ -807,22 +808,24 @@ export const Classes: React.FC = () => {
                       <span className="text-[10px] font-bold text-slate-400 uppercase">{mod.academicYear} • {mod.semester}</span>
                     </div>
                     <div className="space-y-2">
-                      {mod.subjects?.map((sub: string) => (
+                      {Array.from(new Set(mod.subjects || [])).map((sub: unknown) => {
+                        const subjectName = String(sub);
+                        return (
                         <button
-                          key={sub}
+                          key={subjectName}
                           onClick={() => {
                             setSelectedModule(mod);
-                            setSelectedSubject(sub);
+                            setSelectedSubject(subjectName);
                           }}
                           className={cn(
                             "w-full p-3 rounded-xl border-2 transition-all text-left flex items-center justify-between group",
-                            selectedSubject === sub ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-100 text-slate-600 hover:border-indigo-100"
+                            selectedSubject === subjectName ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-100 text-slate-600 hover:border-indigo-100"
                           )}
                         >
-                          <span className="text-xs font-bold uppercase">{sub}</span>
-                          <ChevronRight size={14} className={cn("transition-transform", selectedSubject === sub ? "translate-x-1" : "opacity-0 group-hover:opacity-100")} />
+                          <span className="text-xs font-bold uppercase">{subjectName}</span>
+                          <ChevronRight size={14} className={cn("transition-transform", selectedSubject === subjectName ? "translate-x-1" : "opacity-0 group-hover:opacity-100")} />
                         </button>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 ))}

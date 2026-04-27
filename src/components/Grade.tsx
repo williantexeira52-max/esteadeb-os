@@ -208,7 +208,9 @@ export const Grade: React.FC = () => {
       const duplicatesToDelete: string[] = [];
 
       for (const g of grades) {
-        const key = `${(g.course || '').toLowerCase().trim()}_${(g.name || '').toLowerCase().trim()}`;
+        const normCourse = (g.course || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+        const normName = (g.name || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+        const key = `${normCourse}_${normName}`;
         if (seen.has(key)) {
           duplicatesToDelete.push(g.id);
         } else {

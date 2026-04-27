@@ -312,7 +312,10 @@ export const PortalDashboard: React.FC = () => {
           );
         
         if (subjects.length > 0) {
-          setCurriculum(subjects);
+          const uniqueSubjects = subjects.filter((v: any, i: number, a: any[]) => 
+            a.findIndex((t: any) => t.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "") === v.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "")) === i
+          );
+          setCurriculum(uniqueSubjects);
           setCurriculumLoading(false);
         } else {
           // Deep Search fallback
@@ -321,7 +324,10 @@ export const PortalDashboard: React.FC = () => {
             .filter(g => g.course?.toLowerCase() === studentCourse.toLowerCase() || 
                          studentCourse.toLowerCase().includes(g.course?.toLowerCase()) ||
                          g.course?.toLowerCase().includes(studentCourse.toLowerCase()));
-          setCurriculum(fuzzySubjects);
+          const uniqueSubjects = fuzzySubjects.filter((v, i, a) => 
+            a.findIndex(t => t.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "") === v.name?.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "")) === i
+          );
+          setCurriculum(uniqueSubjects);
           setCurriculumLoading(false);
         }
       },

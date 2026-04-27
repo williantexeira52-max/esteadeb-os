@@ -62,10 +62,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
-  console.error(`Firestore [${operationType}] Error on ${path}:`, errInfo.error);
-  
-  if (!logOnly) {
-    throw new Error(JSON.stringify(errInfo));
+  if (logOnly) {
+    console.warn(`Firestore [${operationType}] Error on ${path} (Logged only):`, errInfo.error);
+    return errInfo;
   }
-  return errInfo;
+  console.error(`Firestore [${operationType}] Error on ${path}:`, errInfo.error);
+  throw new Error(JSON.stringify(errInfo));
 }
