@@ -37,6 +37,22 @@ service cloud.firestore {
       return email.matches(".+@.+") ? email.split("@")[0] : "";
     }
 
+    function isStudentOwner(targetStudentId) {
+      let authPrefix = getStudentMatricula();
+      return isAnyStudent() && (
+        targetStudentId == authPrefix ||
+        (
+          exists(/databases/$(database)/documents/students/$(authPrefix)) && 
+          (
+            targetStudentId == get(/databases/$(database)/documents/students/$(authPrefix)).data.matricula ||
+            targetStudentId == get(/databases/$(database)/documents/students/$(authPrefix)).data.cpf ||
+            targetStudentId == get(/databases/$(database)/documents/students/$(authPrefix)).data.email ||
+            (get(/databases/$(database)/documents/students/$(authPrefix)).data.cpf != null && targetStudentId == get(/databases/$(database)/documents/students/$(authPrefix)).data.cpf.replace('[^0-9]', ''))
+          )
+        )
+      );
+    }
+
     // Default Deny
     match /{document=**} {
       allow read, write: if false;
@@ -54,8 +70,8 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isStaff() || (isAnyStudent() && resource.data.matricula == getStudentMatricula()) || studentId == request.auth.uid;
-      allow list: if isStaff() || (isAnyStudent() && resource.data.matricula == getStudentMatricula());
+      allow read: if isStaff() || isStudentOwner(studentId) || studentId == request.auth.uid;
+      allow list: if isStaff() || isStudentOwner(resource.data.matricula) || isStudentOwner(resource.data.cpf);
       allow create, update: if isStaff();
       allow delete: if isAdmin();
     }
@@ -85,7 +101,7 @@ service cloud.firestore {
     }
 
     match /financial_installments/{instId} {
-      allow read, list: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula());
+      allow read, list: if isStaff() || isStudentOwner(resource.data.studentId);
       allow create, update: if isStaff();
       allow delete: if isAdmin();
     }
@@ -120,12 +136,12 @@ service cloud.firestore {
 
     // Generic match for other collections to prevent breaking
     match /inventory/{id} { allow read, write: if isStaff(); }
-    match /requests/{id} { allow read, write: if isAuthenticated(); }
+    match /requests/{id} { allow read, write: if isAuthenticated() && (isStaff() || isStudentOwner(resource.data.studentId) || resource.data.studentId == null); }
     match /announcements/{id} { allow read, list: if isAuthenticated(); allow write: if isStaff(); }
     match /schedules/{id} { allow read, list: if isAuthenticated(); allow write: if isStaff(); }
     match /curriculum/{id} { allow read, list: if isAuthenticated(); allow write: if isStaff(); }
-    match /academic_records/{id} { allow read, list: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula()); allow write: if isStaff(); }
-    match /subject_enrollments/{id} { allow read, list: if isStaff() || (isAnyStudent() && resource.data.studentId == getStudentMatricula()); allow write: if isStaff(); }
+    match /academic_records/{id} { allow read, list: if isStaff() || isStudentOwner(resource.data.studentId); allow write: if isStaff(); }
+    match /subject_enrollments/{id} { allow read, list: if isStaff() || isStudentOwner(resource.data.studentId); allow write: if isStaff(); }
     match /inventory_movements/{id} { allow read, write: if isAuthenticated(); }
     match /app_users/{id} { allow read, write: if isAuthenticated(); }
   }

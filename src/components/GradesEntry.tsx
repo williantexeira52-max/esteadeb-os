@@ -98,7 +98,7 @@ export const GradesEntry: React.FC = () => {
 
     const unsubscribeClasses = onSnapshot(qClasses, (snapshot) => {
       setClasses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'classes'));
 
     // Grades filtered by nucleo
     const qGrades = query(
@@ -108,7 +108,7 @@ export const GradesEntry: React.FC = () => {
     );
     const unsubscribeGrades = onSnapshot(qGrades, (snapshot) => {
       setGrades(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'grades'));
 
     // Module History filtered by nucleo
     const qModules = query(
@@ -118,7 +118,7 @@ export const GradesEntry: React.FC = () => {
     );
     const unsubscribeModules = onSnapshot(qModules, (snapshot) => {
       setModuleHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'modules_history'));
 
     return () => {
       unsubscribeClasses();
@@ -132,10 +132,13 @@ export const GradesEntry: React.FC = () => {
     if (!filters.classId) return [];
     
     // Filter history to find modules assigned to this specific class AND YEAR
-    const classModules = moduleHistory.filter(m => 
-      m.classId === filters.classId && 
-      (m.year === filters.year || !filters.year)
-    );
+    const classModules = moduleHistory.filter(m => {
+      if (m.classId !== filters.classId) return false;
+      if (!filters.year) return true;
+      const mYearStr = m.year?.toString() || '';
+      const fYearStr = filters.year?.toString() || '';
+      return mYearStr.replace(/[^0-9]/g, '') === fYearStr.replace(/[^0-9]/g, '');
+    });
     
     if (classModules.length === 0) return [];
     
@@ -152,11 +155,14 @@ export const GradesEntry: React.FC = () => {
     if (!filters.classId || !filters.module) return [];
     
     // 1. Find the module record in history (filtered by class, number AND year)
-    const moduleRecord = moduleHistory.find(m => 
-      m.classId === filters.classId && 
-      m.moduleNumber.toString() === filters.module.toString() &&
-      (m.year === filters.year || !filters.year)
-    );
+    const moduleRecord = moduleHistory.find(m => {
+      if (m.classId !== filters.classId) return false;
+      if (m.moduleNumber?.toString() !== filters.module?.toString()) return false;
+      if (!filters.year) return true;
+      const mYearStr = m.year?.toString() || '';
+      const fYearStr = filters.year?.toString() || '';
+      return mYearStr.replace(/[^0-9]/g, '') === fYearStr.replace(/[^0-9]/g, '');
+    });
 
     if (!moduleRecord || !moduleRecord.subjects) return [];
 

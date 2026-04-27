@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { seedInitialAdmin } from '../lib/seeder';
 
 interface AuthContextType {
@@ -83,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSystemConfig(snap.data());
       }
     }, (error) => {
-      console.warn("Permission-denied safely handled in system_config:", error);
+      handleFirestoreError(error, OperationType.GET, 'settings', true);
     });
 
     return () => {

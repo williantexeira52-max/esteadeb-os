@@ -218,16 +218,55 @@ export const Modules: React.FC = () => {
     setIsModalOpen(false);
   };
 
+  const formatDateForInput = (dateStr: any) => {
+    if (!dateStr) return '';
+    const numericDate = Number(dateStr);
+    if (!isNaN(numericDate) && numericDate > 30000 && numericDate < 60000) {
+      const d = new Date((numericDate - 25569) * 86400 * 1000);
+      return d.toISOString().split('T')[0];
+    }
+    if (typeof dateStr === 'string') {
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          // DD/MM/YYYY to YYYY-MM-DD
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      return dateStr.split('T')[0]; // simple fallback
+    }
+    if (dateStr?.toDate) return dateStr.toDate().toISOString().split('T')[0];
+    if (dateStr instanceof Date) return dateStr.toISOString().split('T')[0];
+    return String(dateStr).split('T')[0];
+  };
+
   const handleEdit = (mod: ModuleHistory) => {
     setFormData({
       classId: mod.classId,
-      year: mod.year,
+      year: (() => {
+        const y = mod.year?.toString().toLowerCase() || '';
+        if (y === '1' || y.startsWith('1º') || y === '1 ano' || y === '1ano' || y === '1o ano') return '1º';
+        if (y === '2' || y.startsWith('2º') || y === '2 ano' || y === '2ano' || y === '2o ano') return '2º';
+        if (y === '3' || y.startsWith('3º') || y === '3 ano' || y === '3ano' || y === '3o ano') return '3º';
+        if (y === '4' || y.startsWith('4º') || y === '4 ano' || y === '4ano' || y === '4o ano') return '4º';
+        // if we couldn't match securely, try includes but avoid matching something like '2025'
+        if (y.includes('1º') || y === '1') return '1º';
+        if (y.includes('2º') || y === '2') return '2º';
+        if (y.includes('3º') || y === '3') return '3º';
+        if (y.includes('4º') || y === '4') return '4º';
+        // fallback
+        if (y.includes('1')) return '1º';
+        if (y.includes('2') && !y.includes('20')) return '2º'; // simple avoidance of 2024
+        if (y.includes('3')) return '3º';
+        if (y.includes('4')) return '4º';
+        return mod.year;
+      })(),
       moduleNumber: mod.moduleNumber,
       academicYear: mod.academicYear,
       semester: mod.semester,
       subjects: mod.subjects || [],
-      startDate: mod.startDate || '',
-      endDate: mod.endDate || '',
+      startDate: formatDateForInput(mod.startDate),
+      endDate: formatDateForInput(mod.endDate),
       professorsNotes: mod.professorsNotes || ''
     });
     setEditingId(mod.id);
