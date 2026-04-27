@@ -13,6 +13,7 @@ import {
   orderBy,
   Timestamp,
   getDocs,
+  limit,
   writeBatch
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -30,6 +31,8 @@ import {
   Info,
   Trash2,
   History,
+  CheckCircle2,
+  ShieldCheck,
   AlertTriangle,
   Award,
   CreditCard,
@@ -69,11 +72,13 @@ import { StudentProfileTabs } from './StudentProfileTabs';
 import { AcademicHistoryModal } from './AcademicHistoryModal';
 
 export const Students: React.FC = () => {
-  const { nucleo, profile, setNucleo, user } = useAuth();
+  const { nucleo, profile, setNucleo, user, isAdmin } = useAuth();
   const [students, setStudents] = useState<any[]>([]);
   const [polos, setPolos] = useState<any[]>([]);
+  const [courses, setCourses] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [generatingMatricula, setGeneratingMatricula] = useState(false);
   const [selectedStudentForProfile, setSelectedStudentForProfile] = useState<any>(null);
   const [historyStudent, setHistoryStudent] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, name: string } | null>(null);
@@ -83,7 +88,8 @@ export const Students: React.FC = () => {
     birthDate: '',
     email: '',
     phone: '',
-    course: 'TEOLOGIA',
+    course: '',
+    courseId: '',
     status: 'Ativo',
     rg: '',
     rgIssuer: '',
@@ -119,8 +125,24 @@ export const Students: React.FC = () => {
     percentualDesconto: 0,
     valorIntegral: 206.00,
     valorComDesconto: 206.00,
-    dueDayPattern: '10'
+    dueDayPattern: '10',
+    acceptedContract: false,
+    acceptedContractAt: null,
+    acceptedApplication: false,
+    acceptedApplicationAt: null,
+    acceptedForm: false,
+    acceptedFormAt: null
   });
+
+  const [toasts, setToasts] = useState<any[]>([]);
+
+  const addToast = (title: string, type: 'success' | 'error') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, title, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
 
   useEffect(() => {
     if (isAddDialogOpen) {
@@ -211,25 +233,88 @@ export const Students: React.FC = () => {
         }
       });
       setOtherNucleiCount(counts);
+    }, (error) => {
+      console.warn("Students: Global counts snapshot blocked or failed:", error.message);
     });
 
     const unsubPolos = onSnapshot(query(collection(db, 'school_units'), orderBy('name', 'asc')), (snap) => {
       setPolos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'school_units');
+    });
+
+    const unsubCourses = onSnapshot(query(collection(db, 'courses'), orderBy('name', 'asc')), (snap) => {
+      setCourses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'courses');
     });
 
     return () => {
       unsubscribe();
       unsubAll();
       unsubPolos();
+      unsubCourses();
     };
   }, [nucleo, profile]);
 
+  const handleGenerateMatricula = async () => {
+    if (!newStudent.courseId) {
+      alert("Por favor, selecione um curso primeiro.");
+      return;
+    }
+
+    setGeneratingMatricula(true);
+    try {
+      const year = new Date().getFullYear().toString().slice(-2);
+      
+      // MM (Modalidade)
+      const modCode = nucleo === 'PRESENCIAL' ? '01' : nucleo === 'SEMIPRESENCIAL' ? '02' : '03';
+      
+      // CC (Curso)
+      // Mapeamento baseado no nome do curso
+      const courseName = newStudent.course.toUpperCase();
+      let courseCode = '00';
+      if (courseName.includes('BÁSICO')) courseCode = '01';
+      else if (courseName.includes('MÉDIO')) courseCode = '02';
+      else if (courseName.includes('BACHARELADO')) courseCode = '03';
+      else courseCode = '04'; // Outros
+
+      const prefix = `${year}${modCode}${courseCode}`;
+
+      // Consulta no Firebase para o prefixo
+      const q = query(
+        collection(db, 'students'),
+        where('matricula', '>=', prefix),
+        where('matricula', '<=', prefix + '\uf8ff'),
+        orderBy('matricula', 'desc'),
+        limit(1)
+      );
+
+      const querySnapshot = await getDocs(q);
+      let nextSSS = 1;
+
+      if (!querySnapshot.empty) {
+        const lastMatricula = querySnapshot.docs[0].data().matricula;
+        const lastSSS = parseInt(lastMatricula.slice(-3));
+        nextSSS = lastSSS + 1;
+      }
+
+      const sequential = nextSSS.toString().padStart(3, '0');
+      const finalMatricula = `${prefix}${sequential}`;
+
+      setNewStudent(prev => ({ ...prev, matricula: finalMatricula }));
+    } catch (error) {
+      console.error("Erro ao gerar matrícula:", error);
+      alert("Erro ao gerar matrícula automática.");
+    } finally {
+      setGeneratingMatricula(false);
+    }
+  };
+
   const generateMatricula = () => {
-    const year = new Date().getFullYear().toString().slice(-2);
-    const modCode = nucleo === 'PRESENCIAL' ? '01' : nucleo === 'EAD' ? '02' : '03';
-    const courseCode = newStudent.course === 'TEOLOGIA' ? '10' : '20';
-    const sequential = (students.length + 1).toString().padStart(3, '0');
-    return `${year}${modCode}${courseCode}${sequential}`;
+    // Mantendo apenas para compatibilidade temporária se necessário, 
+    // mas a lógica principal será no handleGenerateMatricula
+    return newStudent.matricula;
   };
 
   const getFifthBusinessDay = (year: number, month: number) => {
@@ -269,7 +354,11 @@ export const Students: React.FC = () => {
 
   const handleAddStudent = async () => {
     try {
-      const matricula = newStudent.isLegacyMode ? newStudent.matricula : generateMatricula();
+      if (!newStudent.matricula && !newStudent.isLegacyMode) {
+        throw new Error('A matrícula deve ser gerada antes de confirmar.');
+      }
+      
+      const matricula = newStudent.matricula;
       const createdAt = newStudent.isLegacyMode ? Timestamp.fromDate(new Date(newStudent.enrollmentDate)) : serverTimestamp();
       
       const studentData = {
@@ -277,6 +366,9 @@ export const Students: React.FC = () => {
         modality: nucleo, // Force modality from global state
         matricula,
         nucleoId: nucleo,
+        // Injeção automática de polo para não-admins
+        poloId: isAdmin ? (newStudent.poloId || '') : (profile?.poloId || ''),
+        poloName: isAdmin ? (newStudent.poloName || 'MATRIZ') : (profile?.poloName || 'MATRIZ'),
         createdAt,
         academicHistory: [],
         financialStatus: 'Regular',
@@ -292,7 +384,7 @@ export const Students: React.FC = () => {
       await setDoc(studentRef, studentData);
       
       // Log action
-      await logAction(profile?.uid || user?.uid || 'system', 'Matrícula Realizada', `Aluno ${newStudent.name} matriculado com ID ${matricula}`);
+      await logAction(profile?.uid || user?.uid || 'system', 'Matrícula Realizada', `Aluno ${studentData.name} matriculado com ID ${matricula}`);
 
       setIsAddDialogOpen(false);
       setNewStudent({
@@ -301,7 +393,8 @@ export const Students: React.FC = () => {
         birthDate: '',
         email: '',
         phone: '',
-        course: 'TEOLOGIA',
+        course: '',
+        courseId: '',
         status: 'Ativo',
         rg: '',
         rgIssuer: '',
@@ -457,10 +550,12 @@ export const Students: React.FC = () => {
             transformRow={(row) => ({
               ...row,
               cpf: row.cpf?.toString().replace(/\D/g, '') || '', // Normalize CPF on import
-              modality: 'Presencial',
+              modality: nucleo,
               nucleoId: nucleo,
-              status: 'Ativo',
-              financialStatus: 'Regular'
+              poloId: profile?.poloId || row.poloId || '',
+              poloName: profile?.poloName || row.poloName || 'MATRIZ',
+              status: row.status || 'Ativo',
+              financialStatus: row.financialStatus || 'Regular'
             })}
             onImportSuccess={() => {
               if (nucleo) syncTurmasIntegrity(nucleo);
@@ -485,6 +580,7 @@ export const Students: React.FC = () => {
                   <TabsTrigger value="contato" className="text-[10px] uppercase font-bold">Contato</TabsTrigger>
                   <TabsTrigger value="financeiro" className="text-[10px] uppercase font-bold">Financeiro</TabsTrigger>
                   <TabsTrigger value="ged" className="text-[10px] uppercase font-bold">GED</TabsTrigger>
+                  <TabsTrigger value="aceites" className="text-[10px] uppercase font-bold text-emerald-600">Aceites</TabsTrigger>
                   <TabsTrigger value="ocorrencias" className="text-[10px] uppercase font-bold">Notas</TabsTrigger>
                 </TabsList>
 
@@ -508,12 +604,24 @@ export const Students: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className={cn(newStudent.isLegacyMode ? "text-navy" : "text-gray-400")}>
-                          Número de Matrícula {newStudent.isLegacyMode ? "" : "(Auto-gerado)"}
-                        </Label>
+                        <div className="flex items-center justify-between">
+                          <Label className={cn(newStudent.isLegacyMode ? "text-navy" : "text-gray-400")}>
+                            Número de Matrícula {newStudent.isLegacyMode ? "" : "(Auto-gerado)"}
+                          </Label>
+                          {!newStudent.isLegacyMode && (
+                            <Button 
+                              size="sm" 
+                              onClick={handleGenerateMatricula} 
+                              disabled={generatingMatricula}
+                              className="h-6 text-[9px] uppercase font-bold bg-petrol hover:bg-petrol-dark"
+                            >
+                              {generatingMatricula ? "Gerando..." : "Gerar"}
+                            </Button>
+                          )}
+                        </div>
                         <Input 
                           disabled={!newStudent.isLegacyMode} 
-                          value={String(newStudent.isLegacyMode ? newStudent.matricula : generateMatricula() || '')} 
+                          value={String(newStudent.matricula || '')} 
                           onChange={(e) => setNewStudent({...newStudent, matricula: e.target.value})}
                           className={cn(!newStudent.isLegacyMode && "bg-gray-50 border-dashed")} 
                         />
@@ -529,6 +637,30 @@ export const Students: React.FC = () => {
                           onChange={(e) => setNewStudent({...newStudent, enrollmentDate: e.target.value})}
                           className={cn(!newStudent.isLegacyMode && "bg-gray-50 border-dashed")} 
                         />
+                      </div>
+                      <div className="col-span-2 space-y-2">
+                        <Label htmlFor="course">Curso Desejado</Label>
+                        <Select 
+                          value={newStudent.courseId} 
+                          onValueChange={(v) => {
+                            const course = courses.find(c => c.id === v);
+                            setNewStudent({
+                              ...newStudent, 
+                              courseId: v, 
+                              course: course ? course.name : '',
+                              matricula: '' // Reset matricula when course changes to force regeneration
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="border-gray-200">
+                            <SelectValue placeholder="Selecione o Curso para Matrícula" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {courses.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label htmlFor="name">Nome Completo</Label>
@@ -548,27 +680,43 @@ export const Students: React.FC = () => {
                           placeholder="000.000.000-00"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Polo de Apoio</Label>
-                        <Select 
-                          value={newStudent.poloId || 'none'} 
-                          onValueChange={(v) => {
-                            const polo = polos.find(p => p.id === v);
-                            setNewStudent({...newStudent, poloId: v === 'none' ? '' : v, poloName: polo ? polo.name : 'MATRIZ'});
-                          }}
-                          disabled={nucleo !== 'SEMIPRESENCIAL' || (profile?.poloId && profile.poloId !== 'none')}
-                        >
-                          <SelectTrigger className={cn((nucleo !== 'SEMIPRESENCIAL' || (profile?.poloId && profile.poloId !== 'none')) && "bg-gray-50 border-dashed")}>
-                            <SelectValue placeholder={nucleo !== 'SEMIPRESENCIAL' ? 'MATRIZ' : 'Selecione o Polo'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">MATRIZ</SelectItem>
-                            {polos.map(p => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      
+                      {/* REGRA DE NEGÓCIO: Se for Admin Global, deixa escolher. Se for Coordenador Local, injeta o dele e oculta. */}
+                      {nucleo === 'SEMIPRESENCIAL' && isAdmin && (
+                        <div className="space-y-2 translate-y-[-2px]">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-indigo-600 font-black uppercase text-[10px] tracking-widest flex items-center gap-1">
+                              Polo de Apoio (Master View)
+                            </Label>
+                          </div>
+                          <Select 
+                            value={newStudent.poloId || 'none'} 
+                            onValueChange={(v) => {
+                              const polo = polos.find(p => p.id === v);
+                              setNewStudent({...newStudent, poloId: v === 'none' ? '' : v, poloName: polo ? polo.name : 'MATRIZ'});
+                            }}
+                          >
+                            <SelectTrigger className="border-indigo-200 bg-indigo-50/30">
+                              <SelectValue placeholder="Selecione o Polo Responsável" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">MATRIZ (Geral)</SelectItem>
+                              {polos.map(p => (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {!isAdmin && nucleo === 'SEMIPRESENCIAL' && (
+                         <div className="space-y-2 bg-slate-50 p-2 rounded-lg border border-slate-100 flex flex-col justify-center">
+                            <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Polo Vinculado</Label>
+                            <p className="text-xs font-bold text-navy uppercase">{profile?.poloName || 'Injetado Automaticamente'}</p>
+                            <p className="text-[9px] text-slate-400 italic">Vínculo restrito ao seu perfil de acesso.</p>
+                         </div>
+                      )}
+
                       <div className="space-y-2">
                         <Label>Modalidade</Label>
                         <Select value={newStudent.modalidade} onValueChange={(v) => setNewStudent({...newStudent, modalidade: v})} disabled>
@@ -587,6 +735,9 @@ export const Students: React.FC = () => {
                           <SelectContent>
                             <SelectItem value="Ativo">Ativo</SelectItem>
                             <SelectItem value="Trancado">Trancado</SelectItem>
+                            <SelectItem value="Evadido">Evadido</SelectItem>
+                            <SelectItem value="Concluído">Concluído</SelectItem>
+                            <SelectItem value="inativo">Inativo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -832,25 +983,108 @@ export const Students: React.FC = () => {
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="ged" className="space-y-4 mt-0">
-                    <div className="grid grid-cols-1 gap-4">
-                      <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
-                        <Upload className="text-gray-300" />
-                        <span className="text-xs font-bold text-navy">Identidade (Frente/Verso)</span>
-                        <Input type="file" className="text-[10px]" />
+                    <TabsContent value="ged" className="space-y-4 mt-0">
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
+                          <Upload className="text-gray-300" />
+                          <span className="text-xs font-bold text-navy">Identidade (Frente/Verso)</span>
+                          <Input type="file" className="text-[10px]" />
+                        </div>
+                        <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
+                          <Upload className="text-gray-300" />
+                          <span className="text-xs font-bold text-navy">Comprovante de Residência</span>
+                          <Input type="file" className="text-[10px]" />
+                        </div>
+                        <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
+                          <Upload className="text-gray-300" />
+                          <span className="text-xs font-bold text-navy">Histórico Escolar / Certificado</span>
+                          <Input type="file" className="text-[10px]" />
+                        </div>
                       </div>
-                      <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
-                        <Upload className="text-gray-300" />
-                        <span className="text-xs font-bold text-navy">Comprovante de Residência</span>
-                        <Input type="file" className="text-[10px]" />
+                    </TabsContent>
+
+                    <TabsContent value="aceites" className="space-y-4 mt-0">
+                      <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-2xl space-y-6">
+                        <div className="flex items-center gap-3 border-b border-emerald-100 pb-4">
+                          <CheckCircle2 className="text-emerald-600" />
+                          <h3 className="font-black text-emerald-900 uppercase tracking-tighter text-lg">Termos de Aceite Digitais</h3>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-emerald-50 hover:shadow-sm transition-all group">
+                            <Checkbox 
+                              id="acc-contract" 
+                              className="mt-1 border-emerald-200 data-[state=checked]:bg-emerald-600"
+                              checked={newStudent.acceptedContract}
+                              onCheckedChange={(checked) => setNewStudent({
+                                ...newStudent, 
+                                acceptedContract: checked as boolean,
+                                acceptedContractAt: checked ? new Date().toISOString() : null
+                              })}
+                            />
+                            <div className="space-y-1">
+                              <Label htmlFor="acc-contract" className="font-bold text-emerald-900 cursor-pointer">
+                                Aceite do Contrato Educacional
+                              </Label>
+                              <p className="text-[10px] text-slate-500 font-medium">O aluno confirma a leitura e concordância com todas as cláusulas do contrato de prestação de serviços.</p>
+                              {newStudent.acceptedContractAt && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-none text-[9px] font-black uppercase">
+                                  Registrado em: {new Date(newStudent.acceptedContractAt).toLocaleString()}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-emerald-50 hover:shadow-sm transition-all group">
+                            <Checkbox 
+                              id="acc-req" 
+                              className="mt-1 border-emerald-200 data-[state=checked]:bg-emerald-600"
+                              checked={newStudent.acceptedApplication}
+                              onCheckedChange={(checked) => setNewStudent({
+                                ...newStudent, 
+                                acceptedApplication: checked as boolean,
+                                acceptedApplicationAt: checked ? new Date().toISOString() : null
+                              })}
+                            />
+                            <div className="space-y-1">
+                              <Label htmlFor="acc-req" className="font-bold text-emerald-900 cursor-pointer">
+                                Aceite do Requerimento de Matrícula
+                              </Label>
+                              <p className="text-[10px] text-slate-500 font-medium">Confirmação formal do pedido de ingresso na instituição para o curso selecionado.</p>
+                              {newStudent.acceptedApplicationAt && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-none text-[9px] font-black uppercase">
+                                  Registrado em: {new Date(newStudent.acceptedApplicationAt).toLocaleString()}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-emerald-50 hover:shadow-sm transition-all group">
+                            <Checkbox 
+                              id="acc-form" 
+                              className="mt-1 border-emerald-200 data-[state=checked]:bg-emerald-600"
+                              checked={newStudent.acceptedForm}
+                              onCheckedChange={(checked) => setNewStudent({
+                                ...newStudent, 
+                                acceptedForm: checked as boolean,
+                                acceptedFormAt: checked ? new Date().toISOString() : null
+                              })}
+                            />
+                            <div className="space-y-1">
+                              <Label htmlFor="acc-form" className="font-bold text-emerald-900 cursor-pointer">
+                                Aceite da Ficha de Matrícula (Veracidade)
+                              </Label>
+                              <p className="text-[10px] text-slate-500 font-medium">O aluno declara que todas as informações prestadas nesta ficha são verdadeiras sob as penas da lei.</p>
+                              {newStudent.acceptedFormAt && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-none text-[9px] font-black uppercase">
+                                  Registrado em: {new Date(newStudent.acceptedFormAt).toLocaleString()}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="p-4 border-2 border-dashed border-gray-100 rounded-xl flex flex-col items-center gap-2">
-                        <Upload className="text-gray-300" />
-                        <span className="text-xs font-bold text-navy">Histórico Escolar / Certificado</span>
-                        <Input type="file" className="text-[10px]" />
-                      </div>
-                    </div>
-                  </TabsContent>
+                    </TabsContent>
 
                   <TabsContent value="ocorrencias" className="space-y-4 mt-0">
                     <div className="space-y-2">
@@ -995,6 +1229,9 @@ export const Students: React.FC = () => {
                         "font-bold text-[10px] uppercase",
                         student.status === 'Ativo' ? "bg-green-100 text-green-700 hover:bg-green-100" : 
                         student.status === 'Trancado' ? "bg-orange-100 text-orange-700 hover:bg-orange-100" :
+                        student.status === 'Evadido' ? "bg-red-100 text-red-700 hover:bg-red-100" :
+                        student.status === 'Concluído' ? "bg-purple-100 text-purple-700 hover:bg-purple-100" :
+                        student.status === 'inativo' ? "bg-slate-100 text-slate-500 hover:bg-slate-100 line-through" :
                         "bg-blue-100 text-blue-700 hover:bg-blue-100"
                       )}>
                         {student.status}

@@ -1,12 +1,15 @@
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export const logAction = async (userId: string, action: string, details: string) => {
+export const logAction = async (userId: string, action: string, details: string, path?: string, nucleoId?: string, changes?: { before?: any, after?: any }) => {
   try {
     await addDoc(collection(db, 'auditLogs'), {
       userId,
       action,
       details,
+      path: path || '',
+      nucleoId: nucleoId || '',
+      changes: changes || null,
       timestamp: serverTimestamp()
     });
   } catch (error) {

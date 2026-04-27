@@ -80,6 +80,8 @@ export const Staff: React.FC = () => {
     const qPolos = query(collection(db, 'school_units'), orderBy('name', 'asc'));
     const unsubscribePolos = onSnapshot(qPolos, (snapshot) => {
       setPolos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'school_units');
     });
 
     return () => {
@@ -92,12 +94,33 @@ export const Staff: React.FC = () => {
     if (!selectedUser) return;
     try {
       const polo = polos.find(p => p.id === selectedPoloId);
-      await updateDoc(doc(db, 'users', selectedUser.id), {
+      const updateData = {
         role: selectedRole,
         poloId: selectedPoloId === 'none' ? null : selectedPoloId,
         poloName: selectedPoloId === 'none' ? 'MATRIZ' : (polo ? polo.name : 'MATRIZ'),
+        restrictedNucleo: selectedRole === 'Coordenador' && selectedPoloId !== 'none' ? 'SEMIPRESENCIAL' : null,
         updatedAt: serverTimestamp()
-      });
+      };
+
+      await updateDoc(doc(db, 'users', selectedUser.id), updateData);
+      
+      // Sync with app_users (which is used for Login/Profile)
+      if (selectedUser.email) {
+        const { getDocs, query, collection, where, setDoc } = await import('firebase/firestore');
+        const appUserSnap = await getDocs(query(collection(db, 'app_users'), where('email', '==', selectedUser.email)));
+        if (!appUserSnap.empty) {
+          // Update all matches (usually just one)
+          for (const appDoc of appUserSnap.docs) {
+            await updateDoc(doc(db, 'app_users', appDoc.id), {
+              ...updateData,
+              // Map for component compatibility
+              unitId: updateData.poloId,
+              unitName: updateData.poloName
+            });
+          }
+        }
+      }
+
       setIsPermDialogOpen(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${selectedUser.id}`);

@@ -132,7 +132,30 @@ export const Audit: React.FC = () => {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-gray-600 italic">
-                      {log.details}
+                      <div className="space-y-1">
+                        {log.details}
+                        {log.changes && (
+                          <div className="mt-2 p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] grid grid-cols-2 gap-4">
+                            {log.changes.before && (
+                              <div className="space-y-1">
+                                <p className="font-bold text-red-500 uppercase tracking-tighter">Antes:</p>
+                                <pre className="bg-red-50/50 p-1 rounded max-w-[200px] overflow-hidden text-ellipsis">
+                                  {JSON.stringify(log.changes.before, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                            {log.changes.after && (
+                              <div className="space-y-1">
+                                <p className="font-bold text-green-600 uppercase tracking-tighter">Depois:</p>
+                                <pre className="bg-green-50/50 p-1 rounded max-w-[200px] overflow-hidden text-ellipsis">
+                                  {JSON.stringify(log.changes.after, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {log.path && <p className="text-[9px] text-slate-300 font-mono mt-1">{log.path}</p>}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

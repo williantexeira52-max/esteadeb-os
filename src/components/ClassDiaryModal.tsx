@@ -458,6 +458,52 @@ export const ClassDiaryModal: React.FC<ClassDiaryModalProps> = ({ isOpen, onClos
 
             <div class="page-number">PÁGINA 02</div>
           </div>
+          <!-- PAGE 3: CONTEÚDO PROGRAMÁTICO -->
+          <div class="page">
+            <h2 style="margin: 0 0 20px 0; font-weight: 900; text-transform: uppercase; font-size: 20px; border-bottom: 2px solid #001F3F; padding-bottom: 10px;">Plano de Aula e Conteúdo Programático</h2>
+            <table class="pauta-table" style="font-size: 11px;">
+              <thead>
+                <tr>
+                  <th style="width: 80px;">Data</th>
+                  <th>Conteúdo Ministrado / Atividades</th>
+                  <th style="width: 150px;">Visto Prof.</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${activeDates.map(d => `
+                  <tr>
+                    <td style="font-weight: 800; text-align: center; height: 60px;">${format(d, 'dd/MM/yyyy')}</td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- PAGE 4: ATA DE ASSINATURAS -->
+          <div class="page portrait">
+            <h2 style="margin: 0 0 20px 0; font-weight: 900; text-transform: uppercase; font-size: 20px; border-bottom: 2px solid #001F3F; padding-bottom: 10px;">Ata de Assinaturas dos Alunos</h2>
+            <table class="pauta-table" style="font-size: 11px;">
+              <thead>
+                <tr>
+                  <th style="width: 30px;">Nº</th>
+                  <th style="width: 250px;">Nome do Aluno</th>
+                  <th>Assinatura do Aluno</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${students.length > 0 ? students.map((s, idx) => `
+                  <tr>
+                    <td style="text-align: center; font-weight: 700; background: #f8f9fa;">${(idx + 1).toString().padStart(2, '0')}</td>
+                    <td style="font-weight: 700; text-transform: uppercase;">${s.name}</td>
+                    <td style="height: 35px;"></td>
+                  </tr>
+                `).join('') : `<tr><td colspan="3">Nenhum aluno.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+
           <script>
             window.onload = () => {
               window.print();

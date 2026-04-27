@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   collection, 
   query, 
@@ -68,6 +68,7 @@ export const Modules: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [courseFilter, setCourseFilter] = useState('Todos');
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, name: string } | null>(null);
   const [toasts, setToasts] = useState<any[]>([]);
 
@@ -94,29 +95,55 @@ export const Modules: React.FC = () => {
   useEffect(() => {
     if (!nucleo || !user) return;
     // Fetch Modules History
-    const qModules = query(
-      collection(db, 'modules_history'), 
-      where('nucleoId', '==', nucleo),
-      orderBy('createdAt', 'desc')
-    );
+    const qModules = profile?.poloId
+      ? query(
+          collection(db, 'modules_history'),
+          where('nucleoId', '==', nucleo),
+          where('poloId', '==', profile.poloId)
+        )
+      : query(
+          collection(db, 'modules_history'), 
+          where('nucleoId', '==', nucleo)
+        );
+
     const unsubscribeModules = onSnapshot(qModules, (snapshot) => {
       const list = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as ModuleHistory[];
-      setModules(list);
+      
+      // Sort in-memory to avoid index requirements
+      const sorted = [...list].sort((a, b) => {
+        const dateA = a.createdAt?.toDate?.() || new Date(0);
+        const dateB = b.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+      
+      setModules(sorted);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'modules_history');
     });
 
     // Fetch Classes
-    const qClasses = query(
+    let qClasses = query(
       collection(db, 'classes'), 
       where('nucleoId', '==', nucleo),
       orderBy('name', 'asc')
     );
+
+    if (profile?.poloId) {
+      qClasses = query(
+        collection(db, 'classes'),
+        where('nucleoId', '==', nucleo),
+        where('poloId', '==', profile.poloId),
+        orderBy('name', 'asc')
+      );
+    }
+
     const unsubscribeClasses = onSnapshot(qClasses, (snapshot) => {
       setClasses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'classes');
     });
 
     // Fetch Grades (Subjects)
@@ -127,6 +154,8 @@ export const Modules: React.FC = () => {
     );
     const unsubscribeGrades = onSnapshot(qGrades, (snapshot) => {
       setGrades(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'grades');
     });
 
     return () => {
@@ -222,9 +251,43 @@ export const Modules: React.FC = () => {
     }));
   };
 
-  const filteredModules = modules.filter(m => 
-    m.className.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const formatDisplayDate = (date: any) => {
+    if (!date) return '--';
+    
+    // Handle Excel serial dates (numbers or strings that look like serial numbers)
+    const numericDate = Number(date);
+    if (!isNaN(numericDate) && numericDate > 30000 && numericDate < 60000) {
+      const d = new Date((numericDate - 25569) * 86400 * 1000);
+      return d.toLocaleDateString('pt-BR');
+    }
+
+    if (typeof date === 'string') {
+      if (date.includes('-')) {
+        return date.split('-').reverse().join('/');
+      }
+      return date;
+    }
+    if (date.toDate && typeof date.toDate === 'function') {
+      return date.toDate().toLocaleDateString('pt-BR');
+    }
+    if (date instanceof Date) {
+      return date.toLocaleDateString('pt-BR');
+    }
+    return String(date);
+  };
+
+  const filteredModules = useMemo(() => {
+    let filtered = modules;
+    if (courseFilter !== 'Todos') {
+      filtered = filtered.filter(m => {
+        const cls = classes.find((c: any) => c.id === m.classId);
+        return cls && (cls.courseName || '') === courseFilter;
+      });
+    }
+    return filtered.filter(m => 
+      m.className.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [modules, classes, searchTerm, courseFilter]);
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
@@ -449,6 +512,25 @@ export const Modules: React.FC = () => {
       </div>
 
       {/* Filters & Stats */}
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <div className="flex bg-slate-200/50 p-1 rounded-2xl max-w-fit">
+          {(['Todos', 'Bacharelado Livre em Teologia', 'Médio em Teologia'] as const).map((course) => (
+            <button
+              key={course}
+              onClick={() => setCourseFilter(course)}
+              className={cn(
+                "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                courseFilter === course 
+                  ? "bg-white text-navy shadow-sm" 
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+              )}
+            >
+              {course === 'Bacharelado Livre em Teologia' ? 'Bacharelado' : course === 'Médio em Teologia' ? 'Médio' : course}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
           <div className="relative flex-1">
@@ -468,7 +550,7 @@ export const Modules: React.FC = () => {
         <div className="bg-navy p-6 rounded-3xl shadow-xl flex items-center justify-between text-white overflow-hidden relative">
           <div className="relative z-10">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Total de Módulos</p>
-            <h3 className="text-3xl font-black mt-1">{modules.length}</h3>
+            <h3 className="text-3xl font-black mt-1">{filteredModules.length}</h3>
           </div>
           <Layers size={48} className="opacity-10 absolute -right-2 -bottom-2 rotate-12" />
         </div>
@@ -490,25 +572,50 @@ export const Modules: React.FC = () => {
             { key: 'academicYear', label: 'Ano_Letivo' },
             { key: 'semester', label: 'Semestre' },
             { key: 'subjects', label: 'Disciplinas' },
-            { key: 'startDate', label: 'Data_Inicial' },
-            { key: 'endDate', label: 'Data_Termino' },
+            { key: 'startDate', label: 'Data_Inicial', type: 'date' },
+            { key: 'endDate', label: 'Data_Termino', type: 'date' },
             { key: 'professorsNotes', label: 'Professores (Opcional)' }
           ]}
           templateHeaders={[
-            { key: 'classId', label: 'ID_Turma' },
+            { key: 'className', label: 'Turma (Obrigatório)' },
             { key: 'year', label: 'Ano_Curso' },
             { key: 'moduleNumber', label: 'Modulo', type: 'number' },
             { key: 'academicYear', label: 'Ano_Letivo' },
             { key: 'semester', label: 'Semestre' },
             { key: 'subjects', label: 'Disciplinas' },
-            { key: 'startDate', label: 'Data_Inicial' },
-            { key: 'endDate', label: 'Data_Termino' },
+            { key: 'startDate', label: 'Data_Inicial', type: 'date' },
+            { key: 'endDate', label: 'Data_Termino', type: 'date' },
             { key: 'professorsNotes', label: 'Professores (Opcional)' }
           ]}
+          onImportSuccess={(count) => {
+            addToast(`${count} módulos importados com sucesso!`, 'success');
+          }}
           transformRow={(row) => {
-            const selectedClass = classes.find(c => c.id === row.classId);
+            // Find class by ID or Name (case insensitive)
+            const rowClassName = row.className || row['Turma (Obrigatório)'] || row.Nome_Turma || row.Turma || row.Ano_Curso || '';
+            const rowClassId = row.classId || row.ID_Turma || '';
+
+            const selectedClass = classes.find(c => 
+              (rowClassId && c.id === rowClassId) || 
+              (rowClassName && c.name?.toLowerCase().trim() === rowClassName.toString().toLowerCase().trim()) ||
+              // Flexible match for things like "1º Bacharelado" vs "Bacharelado" if unique
+              (rowClassName && c.name?.toLowerCase().includes(rowClassName.toString().toLowerCase().trim()))
+            );
+            
+            // If still not found, try searching classes that start with the number provided in Ano_Curso
+            let finalClassName = selectedClass?.name || rowClassName || 'Turma Não Encontrada';
+            let finalClassId = selectedClass?.id || rowClassId || '';
+
+            if (!finalClassId && row.year) {
+               const yearMatch = classes.find(c => c.name?.includes(row.year));
+               if (yearMatch) {
+                 finalClassId = yearMatch.id;
+                 finalClassName = yearMatch.name;
+               }
+            }
+
             // Handle subjects if provided as comma-separated string in Excel
-            let subjects = row.subjects;
+            let subjects = row.subjects || row.Disciplinas;
             if (typeof subjects === 'string') {
               subjects = subjects.split(',').map(s => s.trim()).filter(Boolean);
             } else if (!Array.isArray(subjects)) {
@@ -517,8 +624,13 @@ export const Modules: React.FC = () => {
 
             return {
               ...row,
-              className: selectedClass?.name || 'Turma Não Encontrada',
-              subjects: subjects
+              classId: finalClassId,
+              className: finalClassName,
+              subjects: subjects,
+              nucleoId: nucleo,
+              poloId: profile?.poloId || null,
+              poloName: profile?.poloName || 'MATRIZ',
+              updatedAt: serverTimestamp()
             };
           }}
         />
@@ -567,7 +679,7 @@ export const Modules: React.FC = () => {
                     </p>
                     {(mod.startDate || mod.endDate) && (
                       <p className="text-[10px] text-slate-500 font-bold mt-1">
-                        {mod.startDate ? mod.startDate.split('-').reverse().join('/') : '--'} até {mod.endDate ? mod.endDate.split('-').reverse().join('/') : '--'}
+                        {formatDisplayDate(mod.startDate)} até {formatDisplayDate(mod.endDate)}
                       </p>
                     )}
                   </td>

@@ -135,7 +135,9 @@ const AdminLayout: React.FC<{
                     : "hover:bg-navy-dark"
                 )}
               >
-                <span className="text-petrol uppercase hidden xs:inline">MODALIDADE:</span> {nucleo}
+                <span className="text-petrol uppercase hidden xs:inline">
+                  {profile?.poloName && profile.poloName !== 'MATRIZ' ? 'POLO:' : 'MODALIDADE:'}
+                </span> {profile?.poloName && profile.poloName !== 'MATRIZ' ? profile.poloName : nucleo}
                 {!(profile?.restrictedNucleo && profile.restrictedNucleo !== 'ALL') && <ChevronDown size={14} className="sm:w-4 sm:h-4" />}
               </button>
               {!(profile?.restrictedNucleo && profile.restrictedNucleo !== 'ALL') && (

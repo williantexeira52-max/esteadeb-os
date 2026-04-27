@@ -75,6 +75,7 @@ export const DataActions: React.FC<DataActionsProps> = ({
         const labelLower = h.label.toLowerCase();
         
         if (labelLower.includes('id') || labelLower.includes('matricula')) exampleValue = 'EX: 12345';
+        else if (labelLower.includes('nome_turma')) exampleValue = 'EX: Teologia 2026 - Noite';
         else if (labelLower.includes('nome') || labelLower.includes('aluno')) exampleValue = 'EX: João Silva';
         else if (labelLower.includes('data') || labelLower.includes('nascimento')) exampleValue = 'EX: 01/01/2026';
         else if (labelLower.includes('cpf')) exampleValue = 'EX: 123.456.789-00';
@@ -82,12 +83,12 @@ export const DataActions: React.FC<DataActionsProps> = ({
         else if (labelLower.includes('email')) exampleValue = 'EX: aluno@email.com';
         else if (labelLower.includes('modulo')) exampleValue = 'EX: 1';
         else if (labelLower.includes('curso')) exampleValue = 'EX: TEOLOGIA';
-        else if (labelLower.includes('semestre')) exampleValue = 'EX: 1';
+        else if (labelLower.includes('semestre')) exampleValue = 'EX: 1º Semestre';
         else if (labelLower.includes('turma')) exampleValue = 'EX: T01';
         else if (labelLower.includes('ano')) exampleValue = 'EX: 2026';
-        else if (labelLower.includes('disciplinas')) exampleValue = 'EX: Teologia Sistemática, Hermenêutica';
+        else if (labelLower.includes('disciplinas')) exampleValue = 'Teologia Sistemática, Hermenêutica, História da Igreja';
         else if (labelLower.includes('val') || labelLower.includes('preco')) exampleValue = 'EX: 150.00';
-        else if (labelLower.includes('professor')) exampleValue = 'EX: Opcional: Pr. Marcos';
+        else if (labelLower.includes('professor')) exampleValue = 'Exemplo: Pr. João Silva';
         else exampleValue = 'EX: Exemplo';
 
         (templateData[0] as any)[h.label] = exampleValue;
@@ -115,10 +116,10 @@ export const DataActions: React.FC<DataActionsProps> = ({
     reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const rawData = XLSX.utils.sheet_to_json(ws);
+        const rawData = XLSX.utils.sheet_to_json(ws, { raw: false, dateNF: 'yyyy-mm-dd' });
 
         if (rawData.length === 0) {
           setImporting(false);
@@ -142,15 +143,15 @@ export const DataActions: React.FC<DataActionsProps> = ({
 
             activeHeaders.forEach(h => {
               let value = row[h.label];
-              if (h.type === 'number') value = Number(value) || 0;
+              
+              if (h.type === 'number') {
+                value = Number(value?.toString().replace(',', '.')) || 0;
+              }
+              
               if (h.type === 'date' && value) {
-                // Handle Excel serial dates or DD/MM/YYYY strings
-                if (typeof value === 'number') {
-                  // Excel serial date
-                  const date = new Date((value - 25569) * 86400 * 1000);
-                  value = date.toISOString().split('T')[0];
-                } else if (typeof value === 'string' && value.includes('/')) {
-                  // DD/MM/YYYY
+                // If XLSX.read with dateNF produced a string yyyy-mm-dd, we use it
+                // Otherwise handle common variations
+                if (typeof value === 'string' && value.includes('/')) {
                   const [d, m, y] = value.split('/');
                   if (d && m && y) {
                     value = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;

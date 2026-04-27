@@ -15,6 +15,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { DataActions } from './DataActions';
 import { useAuth } from '../contexts/AuthContext';
+import { cn } from '../lib/utils';
 import { 
   Plus, 
   Search, 
@@ -28,7 +29,8 @@ import {
   Layers,
   Clock,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 
 interface GradeItem {
@@ -71,11 +73,13 @@ export const Grade: React.FC = () => {
   const [grades, setGrades] = useState<GradeItem[]>([]);
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [courseFilter, setCourseFilter] = useState('Todos');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, name: string } | null>(null);
+  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
 
   const gradeHeaders = [
     { key: 'name', label: 'Disciplina' },
@@ -196,13 +200,74 @@ export const Grade: React.FC = () => {
     }
   };
 
+  const handleRemoveDuplicates = async () => {
+    if (!grades || grades.length === 0) return;
+    setIsDeletingDuplicates(true);
+    try {
+      const seen = new Set<string>();
+      const duplicatesToDelete: string[] = [];
+
+      for (const g of grades) {
+        const key = `${(g.course || '').toLowerCase().trim()}_${(g.name || '').toLowerCase().trim()}`;
+        if (seen.has(key)) {
+          duplicatesToDelete.push(g.id);
+        } else {
+          seen.add(key);
+        }
+      }
+
+      if (duplicatesToDelete.length === 0) {
+        showToast("Nenhuma disciplina duplicada encontrada.", "success");
+        setIsDeletingDuplicates(false);
+        return;
+      }
+
+      const confirmDelete = window.confirm(`Foram encontradas ${duplicatesToDelete.length} disciplinas duplicadas. Deseja remover todas? Esta ação não pode ser desfeita.`);
+      if (!confirmDelete) {
+        setIsDeletingDuplicates(false);
+        return;
+      }
+
+      let batch = writeBatch(db);
+      let count = 0;
+      let totalDeleted = 0;
+
+      for (const id of duplicatesToDelete) {
+        batch.delete(doc(db, 'grades', id));
+        count++;
+        totalDeleted++;
+
+        if (count === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+
+      showToast(`${totalDeleted} disciplinas duplicadas foram removidas!`, "success");
+    } catch (error) {
+      console.error(error);
+      showToast("Erro ao remover duplicadas.", "error");
+    } finally {
+      setIsDeletingDuplicates(false);
+    }
+  };
+
   const filteredGrades = useMemo(() => {
-    return grades.filter(g => 
+    let filtered = grades;
+    if (courseFilter !== 'Todos') {
+      filtered = filtered.filter(g => (g.course || '') === courseFilter);
+    }
+    return filtered.filter(g => 
       (g.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (g.course || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (g.module || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [grades, searchTerm]);
+  }, [grades, searchTerm, courseFilter]);
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 bg-slate-50 min-h-screen">
@@ -256,6 +321,14 @@ export const Grade: React.FC = () => {
             onImportSuccess={(count) => showToast(`${count} disciplinas importadas!`, "success")}
             transformRow={(row) => ({ ...row, nucleoId: nucleo })}
           />
+          <button
+            onClick={handleRemoveDuplicates}
+            disabled={isDeletingDuplicates}
+            className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 text-white rounded-xl hover:bg-rose-700 disabled:opacity-50 transition-all text-sm font-black shadow-lg shadow-rose-200 uppercase tracking-widest h-10"
+          >
+            {isDeletingDuplicates ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
+            Limpar Duplicatas
+          </button>
           <button 
             onClick={() => {
               setIsFormOpen(true);
@@ -278,7 +351,7 @@ export const Grade: React.FC = () => {
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Disciplinas</p>
-            <p className="text-2xl font-black text-slate-900">{grades.length}</p>
+            <p className="text-2xl font-black text-slate-900">{filteredGrades.length}</p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -297,7 +370,7 @@ export const Grade: React.FC = () => {
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">C.H. Média</p>
             <p className="text-2xl font-black text-slate-900">
-              {grades.length > 0 ? Math.round(grades.reduce((acc, g) => acc + (g.workload || 0), 0) / grades.length) : 0}h
+              {filteredGrades.length > 0 ? Math.round(filteredGrades.reduce((acc, g) => acc + (g.workload || 0), 0) / filteredGrades.length) : 0}h
             </p>
           </div>
         </div>
@@ -400,6 +473,25 @@ export const Grade: React.FC = () => {
       )}
 
       {/* Data Table Section */}
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <div className="flex bg-slate-200/50 p-1 rounded-2xl max-w-fit">
+          {(['Todos', 'Bacharelado Livre em Teologia', 'Médio em Teologia'] as const).map((course) => (
+            <button
+              key={course}
+              onClick={() => setCourseFilter(course)}
+              className={cn(
+                "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                courseFilter === course 
+                  ? "bg-white text-indigo-600 shadow-sm" 
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+              )}
+            >
+              {course === 'Bacharelado Livre em Teologia' ? 'Bacharelado' : course === 'Médio em Teologia' ? 'Médio' : course}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
         <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex items-center gap-4">
           <div className="relative flex-1">

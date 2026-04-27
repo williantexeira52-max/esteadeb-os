@@ -113,7 +113,7 @@ export const MonthlyFees: React.FC = () => {
 
   const [paymentData, setPaymentData] = useState<{
     paymentDate: string;
-    paymentMethod: 'Pix' | 'Dinheiro' | 'Cartão' | 'Permuta de Serviço';
+    paymentMethod: string;
   }>({
     paymentDate: new Date().toISOString().split('T')[0],
     paymentMethod: 'Pix'
@@ -584,7 +584,7 @@ export const MonthlyFees: React.FC = () => {
   const [isBatchPaymentModalOpen, setIsBatchPaymentModalOpen] = useState(false);
   const [batchPaymentData, setBatchPaymentData] = useState<{
     paymentDate: string;
-    paymentMethod: 'Pix' | 'Dinheiro' | 'Cartão' | 'Permuta de Serviço';
+    paymentMethod: string;
   }>({
     paymentDate: new Date().toISOString().split('T')[0],
     paymentMethod: 'Pix'
@@ -974,27 +974,19 @@ export const MonthlyFees: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {(['Pix', 'Dinheiro', 'Cartão', 'Permuta de Serviço'] as const).map(method => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setPaymentData({...paymentData, paymentMethod: method})}
-                        className={cn(
-                          "h-14 rounded-xl text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 transition-all p-1 text-center",
-                          paymentData.paymentMethod === method 
-                            ? "bg-emerald-600 border-emerald-600 text-white" 
-                            : "bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200"
-                        )}
-                      >
-                        {method === 'Pix' && <QrCode size={16} />}
-                        {method === 'Dinheiro' && <Banknote size={16} />}
-                        {method === 'Cartão' && <CreditCard size={16} />}
-                        {method === 'Permuta de Serviço' && <RefreshCcw size={16} />}
-                        {method === 'Permuta de Serviço' ? 'Permuta' : method}
-                      </button>
-                    ))}
-                  </div>
+                  <select 
+                    className="w-full h-14 px-4 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-emerald-500 outline-none transition-all font-bold text-slate-700"
+                    value={paymentData.paymentMethod}
+                    onChange={(e) => setPaymentData({...paymentData, paymentMethod: e.target.value})}
+                  >
+                    <option value="Pix">Pix</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Cartão">Cartão (Débito/Crédito)</option>
+                    <option value="Cartão Recorrente">Cartão Recorrente</option>
+                    <option value="Link de Pagamento">Link de Pagamento</option>
+                    <option value="Boleto">Boleto</option>
+                    <option value="Permuta de Serviço">Permuta de Serviço</option>
+                  </select>
                 </div>
               </div>
 
@@ -1071,27 +1063,19 @@ export const MonthlyFees: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    {(['Pix', 'Dinheiro', 'Cartão', 'Permuta de Serviço'] as const).map(method => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setBatchPaymentData({...batchPaymentData, paymentMethod: method})}
-                        className={cn(
-                          "h-14 rounded-xl text-[10px] font-black uppercase tracking-widest flex flex-col items-center justify-center gap-1 border-2 transition-all p-1 text-center",
-                          batchPaymentData.paymentMethod === method 
-                            ? "bg-emerald-600 border-emerald-600 text-white" 
-                            : "bg-slate-50 border-slate-100 text-slate-400 hover:border-emerald-200"
-                        )}
-                      >
-                        {method === 'Pix' && <QrCode size={16} />}
-                        {method === 'Dinheiro' && <Banknote size={16} />}
-                        {method === 'Cartão' && <CreditCard size={16} />}
-                        {method === 'Permuta de Serviço' && <RefreshCcw size={16} />}
-                        {method === 'Permuta de Serviço' ? 'Permuta' : method}
-                      </button>
-                    ))}
-                  </div>
+                  <select 
+                    className="w-full h-14 px-4 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-emerald-500 outline-none transition-all font-bold text-slate-700"
+                    value={batchPaymentData.paymentMethod}
+                    onChange={(e) => setBatchPaymentData({...batchPaymentData, paymentMethod: e.target.value})}
+                  >
+                    <option value="Pix">Pix</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Cartão">Cartão (Débito/Crédito)</option>
+                    <option value="Cartão Recorrente">Cartão Recorrente</option>
+                    <option value="Link de Pagamento">Link de Pagamento</option>
+                    <option value="Boleto">Boleto</option>
+                    <option value="Permuta de Serviço">Permuta de Serviço</option>
+                  </select>
                 </div>
               </div>
 
@@ -1200,14 +1184,22 @@ export const MonthlyFees: React.FC = () => {
                               .map(inst => (
                               <TableRow key={inst.id} className="print:border-b border-b border-slate-50 h-8">
                                 <TableCell className="font-medium text-xs">{inst.paymentDate?.split('-').reverse().join('/')}</TableCell>
-                                <TableCell className="font-bold uppercase text-slate-700 text-xs">{inst.studentName}</TableCell>
+                                <TableCell className="font-bold uppercase text-slate-700 text-xs">
+                                  {inst.studentName}
+                                  {students.find(s => s.id === inst.studentId)?.className && (
+                                    <span className="block text-[9px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">{students.find(s => s.id === inst.studentId)?.className}</span>
+                                  )}
+                                </TableCell>
                                 <TableCell className="text-center text-slate-400 text-[10px]">{inst.dueDate?.split('-').reverse().join('/')}</TableCell>
                                 <TableCell className="text-center">
                                   <Badge className={cn(
                                     "border-none uppercase text-[9px] font-black print:p-0",
                                     inst.paymentMethod === 'Pix' ? "bg-teal-50 text-teal-700" :
                                     inst.paymentMethod === 'Dinheiro' ? "bg-emerald-50 text-emerald-700" : 
-                                    inst.paymentMethod === 'Permuta de Serviço' ? "bg-orange-50 text-orange-700" : "bg-indigo-50 text-indigo-700"
+                                    (inst.paymentMethod === 'Cartão' || inst.paymentMethod === 'Cartão Recorrente') ? "bg-indigo-50 text-indigo-700" :
+                                    inst.paymentMethod === 'Link de Pagamento' ? "bg-blue-50 text-blue-700" :
+                                    inst.paymentMethod === 'Boleto' ? "bg-stone-50 text-stone-700" :
+                                    inst.paymentMethod === 'Permuta de Serviço' ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-700"
                                   )}>
                                     {inst.paymentMethod || '--'}
                                   </Badge>
@@ -1411,7 +1403,12 @@ export const MonthlyFees: React.FC = () => {
                           <Badge className="bg-orange-50 text-orange-600 border-orange-200 text-[9px] uppercase font-black uppercase tracking-widest px-2 py-0">Acordo</Badge>
                         )}
                       </div>
-                      <p className="text-[10px] text-slate-400 font-mono">{(inst as any).studentMatricula || 'N/A'}</p>
+                      <div className="flex flex-col mt-1">
+                        <p className="text-[10px] text-slate-400 font-mono">{(inst as any).studentMatricula || 'N/A'}</p>
+                        {students.find(s => s.id === inst.studentId)?.className && (
+                          <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">{students.find(s => s.id === inst.studentId)?.className}</p>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="p-6">
                       <p className="font-bold text-slate-600 text-xs">

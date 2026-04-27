@@ -66,19 +66,15 @@ export const Dashboard = () => {
       const today = new Date();
       const tDay = today.getDate().toString().padStart(2, '0');
       const tMonth = (today.getMonth() + 1).toString().padStart(2, '0');
-      const todayKey = `${tDay}/${tMonth}`;
-      const todayKeyIso = `${tMonth}-${tDay}`;
 
       const todayBirthdays = all.filter((s: any) => {
         if (!s.birthDate) return false;
-        // Check formats: DD/MM/YYYY or YYYY-MM-DD
         if (s.birthDate.includes('/')) {
           const [d, m] = s.birthDate.split('/');
           return d.padStart(2, '0') === tDay && m.padStart(2, '0') === tMonth;
         } else if (s.birthDate.includes('-')) {
           const parts = s.birthDate.split('-');
           if (parts.length === 3) {
-            // Check if parts[2] is day or year (usually YYYY-MM-DD)
             const d = parts[0].length === 4 ? parts[2] : parts[0];
             const m = parts[1];
             return d.padStart(2, '0') === tDay && m.padStart(2, '0') === tMonth;
@@ -96,7 +92,7 @@ export const Dashboard = () => {
       
       setStats(prev => ({ ...prev, matriculas: unique.length }));
     }, (err) => {
-      console.warn("Students snapshot failed:", err);
+      console.warn("Dashboard: Students snapshot failed:", err);
     });
 
     let qSchoolCash = query(collection(db, 'school_cash'), where('nucleoId', '==', nucleo));
@@ -104,127 +100,141 @@ export const Dashboard = () => {
       qSchoolCash = query(collection(db, 'school_cash'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
     }
     const unsubSchoolCash = onSnapshot(qSchoolCash, (snap) => {
-      const allSchoolCash = snap.docs.map(d => d.data());
-      
-      let qSnackCash = query(collection(db, 'snack_cash'), where('nucleoId', '==', nucleo));
-      if (profile?.poloId) {
-        qSnackCash = query(collection(db, 'snack_cash'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
-      }
-      
-      onSnapshot(qSnackCash, (snackSnap) => {
-        const allSnackCash = snackSnap.docs.map(d => d.data());
-        
-        let qTransactions = query(collection(db, 'transactions'), where('nucleoId', '==', nucleo));
+      updateFinancials();
+    }, (err) => console.warn("Dashboard: SchoolCash fail:", err));
+
+    let qSnackCash = query(collection(db, 'snack_cash'), where('nucleoId', '==', nucleo));
+    if (profile?.poloId) {
+      qSnackCash = query(collection(db, 'snack_cash'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
+    }
+    const unsubSnackCash = onSnapshot(qSnackCash, (snackSnap) => {
+      updateFinancials();
+    }, (err) => console.warn("Dashboard: SnackCash fail:", err));
+
+    let qTransactions = query(collection(db, 'transactions'), where('nucleoId', '==', nucleo));
+    if (profile?.poloId) {
+      qTransactions = query(collection(db, 'transactions'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
+    }
+    const unsubTransactions = onSnapshot(qTransactions, (snapTrans) => {
+      updateFinancials();
+    }, (err) => console.warn("Dashboard: Transactions fail:", err));
+
+    const updateFinancials = async () => {
+      try {
+        const [snapSchool, snapSnack, snapTrans] = await Promise.all([
+          getDocs(qSchoolCash),
+          getDocs(qSnackCash),
+          getDocs(qTransactions)
+        ]);
+
+        const allSchoolCash = snapSchool.docs.map(d => d.data());
+        const allSnackCash = snapSnack.docs.map(d => d.data());
+        const allTransactions = snapTrans.docs.map(d => d.data());
+
+        let qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), where('nucleoId', '==', nucleo));
         if (profile?.poloId) {
-          qTransactions = query(collection(db, 'transactions'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
+          qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
         }
 
-        const unsubTransactions = onSnapshot(qTransactions, (snapTrans) => {
-          const allTransactions = snapTrans.docs.map(d => d.data());
-          
-          let qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), where('nucleoId', '==', nucleo));
-          if (profile?.poloId) {
-            qInstallments = query(collection(db, 'financial_installments'), where('status', '==', 'Pago'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
+        const instSnap = await getDocs(qInstallments);
+        const paidInstallments = instSnap.docs.map(d => d.data()).filter((d: any) => d.paymentMethod !== 'Permuta de Serviço');
+        
+        let qAllInstallments = query(collection(db, 'financial_installments'), where('nucleoId', '==', nucleo));
+        if (profile?.poloId) {
+          qAllInstallments = query(collection(db, 'financial_installments'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
+        }
+        
+        const allInstSnap = await getDocs(qAllInstallments);
+        const allInst = allInstSnap.docs.map(d => d.data());
+        
+        const todayDate = new Date().toISOString().split('T')[0];
+        const stillLate = allInst.filter(i => i.status !== 'Pago' && i.dueDate < todayDate).length;
+        const recovered = allInst.filter(i => {
+          if (i.status === 'Pago' && i.paymentDate && i.dueDate) {
+            return i.paymentDate > i.dueDate;
           }
+          return false;
+        }).length;
+        
+        const recoveryRate = (recovered + stillLate) > 0 ? Math.round((recovered / (recovered + stillLate)) * 100) : 0;
+        const currentLateRate = allInst.length > 0 ? Math.round((stillLate / allInst.length) * 100) : 0;
+        
+        const calcCashSum = (arr: any[]) => {
+          return arr.reduce((acc, curr) => {
+            if (curr.type === 'ENTRY' || (!curr.type && Number(curr.amount) > 0)) return acc + Number(curr.amount || 0);
+            if (curr.type === 'WITHDRAWAL' || (!curr.type && Number(curr.amount) < 0)) return acc - Math.abs(Number(curr.amount || 0));
+            return acc;
+          }, 0);
+        };
 
-          getDocs(qInstallments).then(instSnap => {
-            const paidInstallments = instSnap.docs.map(d => d.data()).filter((d: any) => d.paymentMethod !== 'Permuta de Serviço');
-            
-            let qAllInstallments = query(collection(db, 'financial_installments'), where('nucleoId', '==', nucleo));
-            if (profile?.poloId) {
-              qAllInstallments = query(collection(db, 'financial_installments'), where('nucleoId', '==', nucleo), where('poloId', '==', profile.poloId));
-            }
-            
-            getDocs(qAllInstallments).then(allInstSnap => {
-              const allInst = allInstSnap.docs.map(d => d.data());
-              
-              const todayDate = new Date().toISOString().split('T')[0];
-              const stillLate = allInst.filter(i => i.status !== 'Pago' && i.dueDate < todayDate).length;
-              const recovered = allInst.filter(i => {
-                if (i.status === 'Pago' && i.paymentDate && i.dueDate) {
-                  return i.paymentDate > i.dueDate;
-                }
-                return false;
-              }).length;
-              
-              const recoveryRate = (recovered + stillLate) > 0 ? Math.round((recovered / (recovered + stillLate)) * 100) : 0;
-              const currentLateRate = allInst.length > 0 ? Math.round((stillLate / allInst.length) * 100) : 0;
-              
-              const calcCashSum = (arr: any[]) => {
-                return arr.reduce((acc, curr) => {
-                  if (curr.type === 'ENTRY' || (!curr.type && Number(curr.amount) > 0)) return acc + Number(curr.amount || 0);
-                  if (curr.type === 'WITHDRAWAL' || (!curr.type && Number(curr.amount) < 0)) return acc - Math.abs(Number(curr.amount || 0));
-                  return acc;
-                }, 0);
-              };
+        const adminTotal = calcCashSum(allTransactions) + paidInstallments.reduce((acc, curr: any) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
+        const schoolTotalValue = calcCashSum(allSchoolCash);
+        const snackTotalValue = calcCashSum(allSnackCash);
 
-              const adminTotal = calcCashSum(allTransactions) + paidInstallments.reduce((acc, curr: any) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
-              const schoolTotalValue = calcCashSum(allSchoolCash);
-              const snackTotalValue = calcCashSum(allSnackCash);
+        setStats(prev => ({ 
+          ...prev, 
+          receita: adminTotal + schoolTotalValue + snackTotalValue,
+          inadimplencia: currentLateRate,
+          recuperacao: recoveryRate
+        }));
+        
+        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        const currentYear = new Date().getFullYear();
+        const monthlyData = months.map((m, i) => {
+          const getMonthlySum = (arr: any[], dateField1: string, dateField2?: string) => {
+            return arr.filter((t: any) => {
+              const dt = t[dateField1] || (dateField2 && t[dateField2]);
+              const d = dt?.toDate ? dt.toDate() : (dt ? new Date(dt) : null);
+              return d && d.getMonth() === i && d.getFullYear() === currentYear && (t.type === 'ENTRY' || (!t.type && Number(t.amount) > 0));
+            }).reduce((acc, curr: any) => acc + Number(curr.amount || 0), 0);
+          };
 
-              const total = adminTotal + schoolTotalValue + snackTotalValue;
-              
-              setStats(prev => ({ 
-                ...prev, 
-                receita: total,
-                inadimplencia: currentLateRate,
-                recuperacao: recoveryRate
-              }));
-              
-              const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-              const currentYear = new Date().getFullYear();
-              const monthlyData = months.map((m, i) => {
-                const getMonthlySum = (arr: any[], dateField1: string, dateField2?: string) => {
-                  return arr.filter((t: any) => {
-                    const dt = t[dateField1] || (dateField2 && t[dateField2]);
-                    const d = dt?.toDate ? dt.toDate() : (dt ? new Date(dt) : null);
-                    return d && d.getMonth() === i && d.getFullYear() === currentYear && (t.type === 'ENTRY' || (!t.type && Number(t.amount) > 0));
-                  }).reduce((acc, curr: any) => acc + Number(curr.amount || 0), 0);
-                };
-
-                const transTotal = getMonthlySum(allTransactions, 'date');
-                const schoolTotal = getMonthlySum(allSchoolCash, 'date');
-                const snackTotal = getMonthlySum(allSnackCash, 'date');
-                
-                const instTotal = paidInstallments.filter((p: any) => {
-                  const d = p.paymentDate ? new Date(p.paymentDate) : (p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.dueDate));
-                  return d && d.getMonth() === i && d.getFullYear() === currentYear;
-                }).reduce((acc, curr: any) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
-                
-                const projetadoTotal = allInst.filter((p: any) => {
-                  const d = p.dueDate ? new Date(p.dueDate + 'T12:00:00') : null;
-                  return d && d.getMonth() === i && d.getFullYear() === currentYear;
-                }).reduce((acc, curr: any) => acc + (curr.baseValue || 0), 0);
-                
-                return { 
-                  name: m, 
-                  receitaAdm: transTotal + instTotal,
-                  projetado: projetadoTotal,
-                  receitaEscola: schoolTotal,
-                  receitaCantina: snackTotal
-                };
-              });
-              setChartData(monthlyData.slice(0, 7)); // Changed to 7 to show more months
-            });
-          });
+          const transTotal = getMonthlySum(allTransactions, 'date');
+          const schoolTotal = getMonthlySum(allSchoolCash, 'date');
+          const snackTotal = getMonthlySum(allSnackCash, 'date');
+          
+          const instTotal = paidInstallments.filter((p: any) => {
+            const d = p.paymentDate ? new Date(p.paymentDate) : (p.updatedAt?.toDate ? p.updatedAt.toDate() : new Date(p.dueDate));
+            return d && d.getMonth() === i && d.getFullYear() === currentYear;
+          }).reduce((acc, curr: any) => acc + (curr.finalPaidValue || curr.baseValue || 0), 0);
+          
+          const projetadoTotal = allInst.filter((p: any) => {
+            const d = p.dueDate ? new Date(p.dueDate + 'T12:00:00') : null;
+            return d && d.getMonth() === i && d.getFullYear() === currentYear;
+          }).reduce((acc, curr: any) => acc + (curr.baseValue || 0), 0);
+          
+          return { 
+            name: m, 
+            receitaAdm: transTotal + instTotal,
+            projetado: projetadoTotal,
+            receitaEscola: schoolTotal,
+            receitaCantina: snackTotal
+          };
         });
-      });
-    }, (err) => console.warn(err));
+        setChartData(monthlyData.slice(0, 7));
+      } catch (e) {
+        console.error("Dashboard: Error updating financials", e);
+      }
+    };
 
     return () => {
       unsubStudents();
       unsubSchoolCash();
+      unsubSnackCash();
+      unsubTransactions();
     };
   }, [nucleo, profile, user]);
 
   const COLORS = ['#1e3a8a', '#cda53f', '#c8102e', '#007a33'];
 
   const dashboardStats = [
-    { label: 'Inadimplência', value: `${stats.inadimplencia}%`, icon: AlertCircle, color: 'text-esteadeb-red', trend: 'down', trendVal: '0%' },
-    { label: 'Taxa de Recuperação', value: `${stats.recuperacao}%`, icon: Percent, color: 'text-emerald-500', trend: 'up', trendVal: '0%' },
-    { label: 'Receita Total', value: `R$ ${stats.receita.toLocaleString('pt-BR')}`, icon: DollarSign, color: 'text-esteadeb-green', trend: 'up', trendVal: '0%' },
-    { label: 'Total Matrículas', value: stats.matriculas.toString(), icon: Users, color: 'text-esteadeb-blue', trend: 'up', trendVal: '0%' },
+    { label: 'Inadimplência', value: `${stats.inadimplencia}%`, icon: AlertCircle, color: 'text-esteadeb-red', trend: stats.inadimplencia > 20 ? 'up' : 'down', trendVal: stats.inadimplencia > 20 ? 'Crítico' : 'Saudável' },
+    { label: 'Taxa de Recuperação', value: `${stats.recuperacao}%`, icon: Percent, color: 'text-emerald-500', trend: stats.recuperacao > 50 ? 'up' : 'down', trendVal: stats.recuperacao > 50 ? 'Excelente' : 'A melhorar' },
+    { label: 'Receita Estima (Mês)', value: `R$ ${(stats.receita / 12).toLocaleString('pt-BR')}`, icon: DollarSign, color: 'text-esteadeb-green', trend: 'up', trendVal: '+12%' },
+    { label: 'Previsão Anual', value: `R$ ${(stats.receita * 1.1).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'text-indigo-500', trend: 'up', trendVal: 'Projetado' },
   ];
+
+  const enrollmentHealth = stats.matriculas > 0 ? Math.min(100, (stats.matriculas / 500) * 100) : 0;
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500">

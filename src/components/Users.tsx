@@ -99,7 +99,7 @@ const SYSTEM_MODULES = [
 ];
 
 export const Users: React.FC = () => {
-  const { profile, user } = useAuth();
+  const { profile, user, isAdmin } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [units, setUnits] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -214,6 +214,9 @@ export const Users: React.FC = () => {
         email: normalizedEmail,
         unitId: finalUnitId,
         unitName: finalUnitName,
+        // Aliases for compatibility across components
+        poloId: finalUnitId,
+        poloName: finalUnitName,
         role: formData.isGlobalAccess ? 'Direção' : 'Coordenador',
         updatedAt: serverTimestamp()
       };

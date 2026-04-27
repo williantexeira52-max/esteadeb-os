@@ -12,12 +12,13 @@ interface DocumentAutomationProps {
   isOpen: boolean;
   onClose: () => void;
   student: any;
-  type: 'CONTRATO' | 'FICHA' | 'REQUERIMENTO' | 'CERTIFICADO' | 'HISTORICO';
+  type: 'CONTRATO' | 'FICHA' | 'REQUERIMENTO' | 'CERTIFICADO' | 'HISTORICO' | 'QUITACAO';
 }
 
 export const ContractAutomation: React.FC<DocumentAutomationProps> = ({ isOpen, onClose, student, type }) => {
   const { systemConfig } = useAuth();
   const [grades, setGrades] = useState<any[]>([]);
+  const [installments, setInstallments] = useState<any[]>([]);
 
   useEffect(() => {
     if (isOpen && student && (type === 'HISTORICO' || type === 'CERTIFICADO')) {
@@ -41,6 +42,19 @@ export const ContractAutomation: React.FC<DocumentAutomationProps> = ({ isOpen, 
         }
       };
       fetchGrades();
+    }
+
+    if (isOpen && student && type === 'QUITACAO') {
+      const fetchInstallments = async () => {
+        try {
+          const q = query(collection(db, 'financial_installments'), where('studentId', '==', student.id));
+          const snap = await getDocs(q);
+          setInstallments(snap.docs.map(d => d.data()));
+        } catch (error) {
+          console.error("Error fetching installments for clearance:", error);
+        }
+      };
+      fetchInstallments();
     }
   }, [isOpen, student, type]);
 
@@ -71,6 +85,7 @@ export const ContractAutomation: React.FC<DocumentAutomationProps> = ({ isOpen, 
     switch(type) {
       case 'FICHA': return 'Ficha de Matrícula';
       case 'REQUERIMENTO': return 'Requerimento de Desconto';
+      case 'QUITACAO': return 'Declaração de Quitação';
       default: return 'Contrato Educacional 2026';
     }
   };
@@ -450,6 +465,54 @@ __________________________________________
     </div>
   );
 
+  const renderQuitacao = () => {
+    const pendencias = installments.filter(i => i.status !== 'Pago').length;
+    const anoAtual = new Date().getFullYear();
+
+    return (
+      <div className="space-y-8 doc-font p-12 text-center">
+        <div className="border-b-2 border-black pb-6 mb-12">
+          <h1 className="text-2xl font-black uppercase tracking-tighter">Declaração de Quitação Anual de Débitos</h1>
+          <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-2">(Lei Federal nº 12.007/2009)</p>
+        </div>
+
+        <div className="text-justify leading-relaxed space-y-6">
+          <p>
+            A <strong>{schoolName}</strong>, inscrita no CNPJ sob o nº <strong>{schoolCnpj}</strong>, com sede em <strong>{schoolAddress}</strong>, 
+            declara para os devidos fins, em cumprimento à Lei Federal nº 12.007/2009, que o(a) aluno(a) <strong>{student.name}</strong>, 
+            CPF nº <strong>{student.cpf || '---'}</strong>, matriculado(a) sob o número <strong>{student.matricula || student.id}</strong>, 
+            <strong> {pendencias === 0 ? 'ENCONTRA-SE EM DIA' : 'POSSUI PENDÊNCIAS FINACEIRAS'}</strong> com suas obrigações pecuniárias relativas ao ano letivo de <strong>{anoAtual}</strong>.
+          </p>
+
+          {pendencias === 0 ? (
+            <p className="font-bold bg-slate-50 p-6 border-2 border-black/10 rounded-2xl text-center text-lg">
+              ESTA DECLARAÇÃO COMPROVA A QUITAÇÃO INTEGRAL DOS DÉBITOS DO EXERCÍCIO DE {anoAtual}.
+            </p>
+          ) : (
+            <div className="bg-red-50 p-6 border-2 border-red-200 rounded-2xl text-center text-red-700">
+               <p className="font-black uppercase tracking-tight">Atenção: Constam {pendencias} parcela(s) pendente(s) no sistema.</p>
+               <p className="text-xs mt-2 italic text-red-500">Esta declaração não tem validade como quitação integral enquanto houver débitos.</p>
+            </div>
+          )}
+
+          <p className="text-sm pt-8 italic text-slate-600">
+            Esta declaração substitui, para efeito de comprovação de quitação de débitos, os recibos de pagamento mensais emitidos no período acima mencionado.
+          </p>
+        </div>
+
+        <div className="pt-24 space-y-12">
+          <p className="font-medium">Natal/RN, {dataExtenso}.</p>
+          
+          <div className="flex flex-col items-center">
+             <div className="w-80 h-px bg-black mb-1"></div>
+             <p className="font-black uppercase text-xs">Assinatura do Responsável Financeiro</p>
+             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{schoolName}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderCertificado = () => (
     <div className="p-0 text-slate-900 font-sans mx-auto bg-white relative min-h-[794px] flex flex-col items-center justify-center print:w-[1123px] print:h-[794px] overflow-hidden" 
       style={{ 
@@ -674,6 +737,7 @@ __________________________________________
           {type === 'REQUERIMENTO' && renderRequerimento()}
           {type === 'HISTORICO' && renderHistorico()}
           {type === 'CERTIFICADO' && renderCertificado()}
+          {type === 'QUITACAO' && renderQuitacao()}
 
           {/* Director Signature (only for standard docs) */}
           {systemConfig?.directorSignatureUrl && !['HISTORICO', 'CERTIFICADO', 'FICHA', 'REQUERIMENTO', 'CONTRATO'].includes(type) && (

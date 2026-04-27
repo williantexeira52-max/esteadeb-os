@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { logAction } from '../lib/audit';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,8 @@ import {
   Loader2, 
   Trash2, 
   CheckCircle2,
+  ShieldCheck,
+  Info,
   AlertCircle,
   AlertTriangle,
   BookOpen,
@@ -45,7 +48,8 @@ import {
   Award,
   Printer,
   ChevronRight,
-  Edit
+  Edit,
+  MapPin
 } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
 import { ContractAutomation } from './ContractAutomation';
@@ -60,7 +64,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
   const [activeTab, setActiveTab] = useState('core');
   const [isSaving, setIsSaving] = useState(false);
   const [isContractOpen, setIsContractOpen] = useState(false);
-  const [docType, setDocType] = useState<'CONTRATO' | 'FICHA' | 'REQUERIMENTO' | 'CERTIFICADO' | 'HISTORICO'>('CONTRATO');
+  const [docType, setDocType] = useState<'CONTRATO' | 'FICHA' | 'REQUERIMENTO' | 'CERTIFICADO' | 'HISTORICO' | 'QUITACAO'>('CONTRATO');
   const [formData, setFormData] = useState({ ...student });
   const [parcels, setParcels] = useState<any[]>([]);
   const [polos, setPolos] = useState<any[]>([]);
@@ -203,7 +207,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
     setIsSaving(true);
     try {
       const studentRef = doc(db, 'students', student.id);
-      await updateDoc(studentRef, {
+      const updatePayload = {
         name: formData.name || '',
         cpf: formData.cpf || '',
         matricula: formData.matricula || '',
@@ -241,7 +245,23 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
         neighborhood: formData.neighborhood || '',
         city: formData.city || '',
         state: formData.state || ''
-      });
+      };
+      
+      await updateDoc(studentRef, updatePayload);
+      
+      // Log detailed change
+      await logAction(
+        profile.uid,
+        'ALUNO_ATUALIZADO',
+        `Dados do aluno ${student.name} atualizados.`,
+        `students/${student.id}`,
+        nucleo,
+        {
+          before: student,
+          after: { ...student, ...updatePayload }
+        }
+      );
+
       onUpdate?.();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'students');
@@ -521,6 +541,11 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
     setIsContractOpen(true);
   };
 
+  const handleOpenQuitacao = () => {
+    setDocType('QUITACAO');
+    setIsContractOpen(true);
+  };
+
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full relative">
       <div className="flex items-center justify-between mb-4">
@@ -570,6 +595,14 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
           >
             <Award size={16} />
             Emitir Certificado
+          </Button>
+          <Button 
+            onClick={handleOpenQuitacao}
+            variant="outline"
+            className="border-emerald-500 text-emerald-600 hover:bg-emerald-50 rounded-xl gap-2 font-bold uppercase text-[10px] tracking-widest h-10 px-6 shadow-lg shadow-emerald-500/10"
+          >
+            <CheckCircle2 size={16} />
+            Quitação Débitos
           </Button>
         </div>
       </div>
@@ -703,11 +736,11 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                  </tr>
                </thead>
                <tbody>
-                  {academicRecords.map((r, idx) => (
+                   {academicRecords.map((r, idx) => (
                     <tr key={idx}>
-                       <td className="p-3 border border-gray-200 text-xs font-bold text-navy uppercase">{r.moduleName}</td>
-                       <td className="p-3 border border-gray-200 text-xs font-bold text-center">{r.grade}</td>
-                       <td className="p-3 border border-gray-200 text-xs font-black uppercase text-center">{r.status}</td>
+                       <td className="p-3 border border-gray-200 text-xs font-bold text-navy uppercase">{r.disciplina || r.moduleName}</td>
+                       <td className="p-3 border border-gray-200 text-xs font-bold text-center">{(r.nota ?? r.grade)?.toString() || '--'}</td>
+                       <td className="p-3 border border-gray-200 text-xs font-black uppercase text-center">{r.status || '--'}</td>
                     </tr>
                   ))}
                   {academicRecords.length === 0 && (
@@ -783,14 +816,15 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
         </div>
       )}
 
-      <TabsList className="grid grid-cols-7 w-full bg-navy/5 p-1 rounded-xl">
-        <TabsTrigger value="core" className="data-[state=active]:bg-white data-[state=active]:text-navy">Dados</TabsTrigger>
-        <TabsTrigger value="contact" className="data-[state=active]:bg-white data-[state=active]:text-navy">Contato</TabsTrigger>
-        <TabsTrigger value="academic" className="data-[state=active]:bg-white data-[state=active]:text-navy">Histórico</TabsTrigger>
-        <TabsTrigger value="church" className="data-[state=active]:bg-white data-[state=active]:text-navy">Eclesiástico</TabsTrigger>
-        <TabsTrigger value="finance" className="data-[state=active]:bg-white data-[state=active]:text-navy">Financeiro</TabsTrigger>
-        <TabsTrigger value="ged" className="data-[state=active]:bg-white data-[state=active]:text-navy">Documentos</TabsTrigger>
-        <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:text-navy">Ocorrências</TabsTrigger>
+      <TabsList className="grid grid-cols-4 lg:grid-cols-8 w-full bg-navy/5 p-1 rounded-xl h-auto">
+        <TabsTrigger value="core" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Dados</TabsTrigger>
+        <TabsTrigger value="contact" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Contato</TabsTrigger>
+        <TabsTrigger value="academic" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Histórico</TabsTrigger>
+        <TabsTrigger value="church" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Eclesiástico</TabsTrigger>
+        <TabsTrigger value="finance" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Financeiro</TabsTrigger>
+        <TabsTrigger value="ged" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Documentos</TabsTrigger>
+        <TabsTrigger value="aceites" className="data-[state=active]:bg-white data-[state=active]:text-navy text-emerald-600 whitespace-normal py-2">Aceites Digitais</TabsTrigger>
+        <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:text-navy whitespace-normal py-2">Ocorrências</TabsTrigger>
       </TabsList>
 
       <div className="mt-6">
@@ -801,125 +835,145 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                 <User className="text-petrol" size={20} /> Dados Cadastrais
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Matrícula</Label>
-                <Input value={formData.matricula} onChange={e => setFormData({...formData, matricula: e.target.value})} className="font-mono" />
-              </div>
-              <div className="space-y-2">
-                <Label>Data de Matrícula</Label>
-                <Input 
-                  type="date"
-                  value={formData.matriculationDate || (student.createdAt?.toDate()?.toISOString().split('T')[0] || '')} 
-                  onChange={e => setFormData({...formData, matriculationDate: e.target.value})} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>CPF</Label>
-                <Input value={formData.cpf} onChange={e => setFormData({...formData, cpf: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Nome Completo</Label>
-                <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Data de Nascimento</Label>
-                <Input type="date" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1 space-y-2">
-                  <Label>RG</Label>
-                  <Input value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} />
-                </div>
-                <div className="col-span-1 space-y-2">
-                  <Label>Órgão Emissor</Label>
-                  <Input value={formData.rgIssuer} onChange={e => setFormData({...formData, rgIssuer: e.target.value})} />
-                </div>
-                <div className="col-span-1 space-y-2">
-                  <Label>UF RG</Label>
-                  <Input value={formData.rgState} onChange={e => setFormData({...formData, rgState: e.target.value})} maxLength={2} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label>Naturalidade (Cidade)</Label>
-                  <Input value={formData.birthCity} onChange={e => setFormData({...formData, birthCity: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>UF Nascimento</Label>
-                  <Input value={formData.birthState} onChange={e => setFormData({...formData, birthState: e.target.value})} maxLength={2} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Estado Civil</Label>
-                <Select value={formData.maritalStatus} onValueChange={v => setFormData({...formData, maritalStatus: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SOLTEIRO">Solteiro(a)</SelectItem>
-                    <SelectItem value="CASADO">Casado(a)</SelectItem>
-                    <SelectItem value="DIVORCIADO">Divorciado(a)</SelectItem>
-                    <SelectItem value="VIUVO">Viúvo(a)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Gênero</Label>
-                <Select value={formData.gender} onValueChange={v => setFormData({...formData, gender: v})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="M">Masculino</SelectItem>
-                    <SelectItem value="F">Feminino</SelectItem>
-                    <SelectItem value="O">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Polo</Label>
-                <Select 
-                  value={formData.poloId || 'none'} 
-                  onValueChange={v => {
-                    const polo = polos.find(p => p.id === v);
-                    setFormData({
-                      ...formData, 
-                      poloId: v === 'none' ? null : v, 
-                      poloName: polo ? polo.name : 'MATRIZ'
-                    });
-                  }}
-                  disabled={!isAdmin && profile?.poloId}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">MATRIZ</SelectItem>
-                    {polos.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Nome do Pai</Label>
-                <Input value={formData.fatherName} onChange={e => setFormData({...formData, fatherName: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Nome da Mãe</Label>
-                <Input value={formData.motherName} onChange={e => setFormData({...formData, motherName: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Profissão</Label>
-                <Input value={formData.profissao} onChange={e => setFormData({...formData, profissao: e.target.value})} />
-              </div>
-
-              <div className="col-span-2 mt-4 pt-4 border-t border-slate-100">
-                <h3 className="text-sm font-black text-navy uppercase tracking-tight mb-4 flex items-center gap-2">
-                  <CreditCard size={18} className="text-petrol" /> Configuração Financeira (Bolsa/Desconto)
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <CardContent className="space-y-8">
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  Identificação do Aluno
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Matrícula</Label>
+                    <Input value={formData.matricula} onChange={e => setFormData({...formData, matricula: e.target.value})} className="font-mono bg-slate-50" />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Nome Completo</Label>
+                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Data de Matrícula</Label>
+                    <Input 
+                      type="date"
+                      value={formData.matriculationDate || (student.createdAt?.toDate()?.toISOString().split('T')[0] || '')} 
+                      onChange={e => setFormData({...formData, matriculationDate: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Polo de Estudo</Label>
+                    <Select 
+                      value={formData.poloId || 'none'} 
+                      onValueChange={v => {
+                        const polo = polos.find(p => p.id === v);
+                        setFormData({
+                          ...formData, 
+                          poloId: v === 'none' ? null : v, 
+                          poloName: polo ? polo.name : 'MATRIZ'
+                        });
+                      }}
+                      disabled={!isAdmin && profile?.poloId}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">MATRIZ</SelectItem>
+                        {polos.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  Documentação e Nascimento
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">CPF</Label>
+                    <Input value={formData.cpf} onChange={e => setFormData({...formData, cpf: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">RG</Label>
+                    <Input value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Órgão Emissor</Label>
+                    <Input value={formData.rgIssuer} onChange={e => setFormData({...formData, rgIssuer: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">UF RG</Label>
+                    <Input value={formData.rgState} onChange={e => setFormData({...formData, rgState: e.target.value})} maxLength={2} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Data de Nascimento</Label>
+                    <Input type="date" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Naturalidade (Cidade)</Label>
+                    <Input value={formData.birthCity} onChange={e => setFormData({...formData, birthCity: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">UF Nasc.</Label>
+                    <Input value={formData.birthState} onChange={e => setFormData({...formData, birthState: e.target.value})} maxLength={2} />
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  Dados Complementares e Filiação
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Nome do Pai</Label>
+                    <Input value={formData.fatherName} onChange={e => setFormData({...formData, fatherName: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Nome da Mãe</Label>
+                    <Input value={formData.motherName} onChange={e => setFormData({...formData, motherName: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Estado Civil</Label>
+                    <Select value={formData.maritalStatus} onValueChange={v => setFormData({...formData, maritalStatus: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SOLTEIRO">Solteiro(a)</SelectItem>
+                        <SelectItem value="CASADO">Casado(a)</SelectItem>
+                        <SelectItem value="DIVORCIADO">Divorciado(a)</SelectItem>
+                        <SelectItem value="VIUVO">Viúvo(a)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Gênero</Label>
+                    <Select value={formData.gender} onValueChange={v => setFormData({...formData, gender: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="M">Masculino</SelectItem>
+                        <SelectItem value="F">Feminino</SelectItem>
+                        <SelectItem value="O">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Profissão</Label>
+                    <Input value={formData.profissao} onChange={e => setFormData({...formData, profissao: e.target.value})} />
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-amber-50/30 shadow-sm space-y-4">
+                <legend className="px-3 flex items-center gap-2 text-xs font-black text-amber-700 uppercase tracking-widest bg-amber-100 rounded-full border border-amber-200">
+                  <CreditCard size={14} /> Configuração Financeira Básica
+                </legend>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="space-y-2 md:col-span-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nome do Desconto</Label>
                     <Input 
                       placeholder="Ex: Desconto Padrão"
                       value={formData.nomeDesconto} 
                       onChange={e => setFormData({...formData, nomeDesconto: e.target.value})} 
+                      className="bg-white"
                     />
                   </div>
                   <div className="space-y-2">
@@ -937,6 +991,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                           valorComDesconto: Number(discounted.toFixed(2))
                         });
                       }} 
+                      className="bg-white"
                     />
                   </div>
                   <div className="space-y-2">
@@ -954,10 +1009,11 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                           valorComDesconto: Number(discounted.toFixed(2))
                         });
                       }} 
+                      className="bg-white"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valor com Desconto (R$)</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valor Atual (R$)</Label>
                     <Input 
                       type="number"
                       value={formData.valorComDesconto} 
@@ -974,36 +1030,94 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                           percentualDesconto: Number(pct.toFixed(2))
                         });
                       }} 
+                      className="bg-white"
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 md:col-span-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vencimento Padrão</Label>
                     <Select 
                       value={formData.dueDayPattern || '10'} 
                       onValueChange={v => setFormData({...formData, dueDayPattern: v})}
                     >
-                      <SelectTrigger className="bg-white border-slate-200">
+                      <SelectTrigger className="bg-white">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="5_UTIL">5º Dia Útil (Conforme Tabela)</SelectItem>
+                        <SelectItem value="5_UTIL">5º Dia Útil</SelectItem>
                         <SelectItem value="10">Todo dia 10</SelectItem>
                         <SelectItem value="20">Todo dia 20</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
-              </div>
+              </fieldset>
 
-              <Button className="col-span-2 bg-navy mt-4" onClick={handleSaveCore} disabled={isSaving}>
-                {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
-                Salvar Alterações
-              </Button>
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <Button className="bg-petrol text-white px-8 h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-petrol/20 hover:bg-navy transition-colors w-full md:w-auto" onClick={handleSaveCore} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
+                  Salvar Alterações do Aluno
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="academic" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          {/* Progress Overview Section */}
+          <Card className="border-none shadow-sm bg-gradient-to-br from-indigo-900 to-navy text-white overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+            <CardContent className="p-8 relative z-10">
+              <div className="flex flex-col md:flex-row items-center gap-8">
+                <div className="w-32 h-32 shrink-0 relative">
+                  <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                    <path
+                      className="text-white/20"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    />
+                    <path
+                      className="text-amber-400 drop-shadow-md"
+                      strokeDasharray={`${allModules.length > 0 ? (academicRecords.filter(r => r.status === 'Aprovado' || r.status === 'Dispensado').length / allModules.length) * 100 : 0}, 100`}
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-black text-white">
+                      {allModules.length > 0 ? Math.round((academicRecords.filter(r => r.status === 'Aprovado' || r.status === 'Dispensado').length / allModules.length) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">Progresso no Curso</h3>
+                  <p className="text-indigo-200 text-sm font-bold uppercase tracking-widest mb-6">
+                    {student.course || 'Curso não definido'}
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    <div className="bg-white/10 px-4 py-2 rounded-xl backdrop-blur-sm border border-white/10">
+                      <p className="text-[10px] text-indigo-300 font-black uppercase tracking-widest">Currículo Total</p>
+                      <p className="text-xl font-bold">{allModules.length} Disciplinas</p>
+                    </div>
+                    <div className="bg-emerald-500/20 px-4 py-2 rounded-xl backdrop-blur-sm border border-emerald-500/20">
+                      <p className="text-[10px] text-emerald-300 font-black uppercase tracking-widest">Concluídas</p>
+                      <p className="text-xl font-bold">{academicRecords.filter(r => r.status === 'Aprovado' || r.status === 'Dispensado').length}</p>
+                    </div>
+                    <div className="bg-amber-500/20 px-4 py-2 rounded-xl backdrop-blur-sm border border-amber-500/20">
+                      <p className="text-[10px] text-amber-300 font-black uppercase tracking-widest">Pendentes</p>
+                      <p className="text-xl font-bold">{Math.max(0, allModules.length - academicRecords.filter(r => r.status === 'Aprovado' || r.status === 'Dispensado').length)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-none shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-navy text-lg flex items-center gap-2">
@@ -1014,45 +1128,100 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-slate-50">
-                      <th className="p-4 text-[10px] font-black uppercase text-slate-400">Disciplina</th>
-                      <th className="p-4 text-[10px] font-black uppercase text-slate-400">Nota</th>
-                      <th className="p-4 text-[10px] font-black uppercase text-slate-400">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {academicRecords.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="p-8 text-center text-slate-400 text-xs font-bold uppercase">Nenhum registro acadêmico encontrado.</td>
-                      </tr>
-                    ) : (
-                      academicRecords.map((record) => (
-                        <tr key={record.id} className="hover:bg-slate-50/50 transition-all">
-                          <td className="p-4">
-                            <p className="font-bold text-navy text-sm">{record.disciplina || record.moduleName}</p>
-                            {record.institution && <p className="text-[10px] text-slate-400">{record.institution}</p>}
-                          </td>
-                          <td className="p-4">
-                            <Badge variant="outline" className="font-mono">{(record.nota ?? record.grade)?.toString()}</Badge>
-                          </td>
-                          <td className="p-4">
-                            <Badge className={cn(
-                              "text-[10px] font-black uppercase",
-                              record.status === 'Aprovado' ? 'bg-emerald-100 text-emerald-700' : 
-                              record.status === 'Dispensado' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
-                            )}>
-                              {record.status}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                <div className="overflow-x-auto space-y-8">
+                  {academicRecords.length === 0 && allModules.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs font-bold uppercase border-2 border-dashed border-slate-100 rounded-2xl">
+                      Nenhum registro acadêmico encontrado.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Histórico Grouped Items */}
+                      {Object.entries(
+                        academicRecords.reduce((acc, record) => {
+                          const groupKey = record.ano 
+                            ? `${record.ano} - ${record.turmaName || record.className || 'Disciplinas'}` 
+                            : (record.turmaName || record.className || 'Registros Gerais');
+                          
+                          if (!acc[groupKey]) acc[groupKey] = [];
+                          acc[groupKey].push(record);
+                          return acc;
+                        }, {} as Record<string, any[]>)
+                      ).map(([groupKey, records]) => (
+                        <div key={groupKey} className="space-y-3">
+                          <h4 className="font-black text-petrol uppercase tracking-tight text-sm border-b pb-2">
+                            {groupKey}
+                          </h4>
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-slate-50">
+                                <th className="p-4 rounded-l-xl text-[10px] font-black uppercase text-slate-400">Módulo</th>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400">Disciplina</th>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400">Nota</th>
+                                <th className="p-4 rounded-r-xl text-[10px] font-black uppercase text-slate-400">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {(records as any[]).map((record) => (
+                                <tr key={record.id} className="hover:bg-slate-50/50 transition-all">
+                                  <td className="p-4">
+                                    <Badge variant="outline" className="text-[10px] bg-white">Módulo {record.modulo || '--'}</Badge>
+                                  </td>
+                                  <td className="p-4">
+                                    <p className="font-bold text-navy text-sm">{record.disciplina || record.moduleName}</p>
+                                    {record.institution && <p className="text-[10px] text-slate-400">{record.institution}</p>}
+                                  </td>
+                                  <td className="p-4">
+                                    <Badge variant="outline" className="font-mono">{(record.nota ?? record.grade)?.toString()}</Badge>
+                                  </td>
+                                  <td className="p-4">
+                                    <Badge className={cn(
+                                      "text-[10px] font-black uppercase",
+                                      record.status === 'Aprovado' ? 'bg-emerald-100 text-emerald-700' : 
+                                      record.status === 'Dispensado' ? 'bg-blue-100 text-blue-700' : 
+                                      record.status === 'Reprovado' ? 'bg-red-100 text-red-700' : 
+                                      'bg-slate-100 text-slate-700'
+                                    )}>
+                                      {record.status || 'Cursando'}
+                                    </Badge>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+
+                      {/* Pendentes Section */}
+                      {allModules.filter(m => !academicRecords.some(r => (r.disciplina || r.moduleName) === m.name && (r.status === 'Aprovado' || r.status === 'Dispensado'))).length > 0 && (
+                        <div className="space-y-3 mt-8">
+                          <h4 className="font-black text-amber-500 uppercase tracking-tight text-sm border-b border-amber-100 pb-2 flex items-center gap-2">
+                            <AlertCircle size={16} /> Disciplinas Pendentes para Conclusão
+                          </h4>
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-amber-50/50">
+                                <th className="p-4 rounded-l-xl text-[10px] font-black uppercase text-amber-700">Obrigatória</th>
+                                <th className="p-4 rounded-r-xl text-[10px] font-black uppercase text-amber-700">Disciplina / Módulo</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-amber-50/50">
+                              {allModules.filter(m => !academicRecords.some(r => (r.disciplina || r.moduleName) === m.name && (r.status === 'Aprovado' || r.status === 'Dispensado'))).map(m => (
+                                <tr key={m.id} className="hover:bg-amber-50/30 transition-all opacity-80">
+                                  <td className="p-4">
+                                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none text-[8px] font-black uppercase">Pendente</Badge>
+                                  </td>
+                                  <td className="p-4">
+                                    <p className="font-bold text-navy text-sm">{m.name}</p>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
             </CardContent>
           </Card>
 
@@ -1095,96 +1264,120 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
 
         <TabsContent value="church" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <Card className="border-none shadow-sm">
-            <CardHeader>
+            <CardHeader className="pb-2">
               <CardTitle className="text-navy text-lg flex items-center gap-2">
                 <BookOpen className="text-petrol" size={20} /> Dados Eclesiásticos
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Igreja da qual é Membro</Label>
-                <Input value={formData.igrejaMembro} onChange={e => setFormData({...formData, igrejaMembro: e.target.value})} />
+            <CardContent className="space-y-8">
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 flex items-center gap-2 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  <BookOpen size={14} /> Histórico Religioso
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Igreja da qual é Membro</Label>
+                    <Input value={formData.igrejaMembro} onChange={e => setFormData({...formData, igrejaMembro: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Congregação</Label>
+                    <Input value={formData.congregacao} onChange={e => setFormData({...formData, congregacao: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Função que exerce na Igreja</Label>
+                    <Input value={formData.funcaoIgreja} onChange={e => setFormData({...formData, funcaoIgreja: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Data de Conversão</Label>
+                    <Input type="date" value={formData.dataConversao} onChange={e => setFormData({...formData, dataConversao: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Data do Batismo em Águas</Label>
+                    <Input type="date" value={formData.dataBatismo} onChange={e => setFormData({...formData, dataBatismo: e.target.value})} />
+                  </div>
+                </div>
+              </fieldset>
+
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <Button className="bg-petrol text-white px-8 h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-petrol/20 hover:bg-navy transition-colors w-full md:w-auto" onClick={handleSaveCore} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
+                  Salvar Dados Eclesiásticos
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label>Congregação</Label>
-                <Input value={formData.congregacao} onChange={e => setFormData({...formData, congregacao: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Data de Conversão</Label>
-                <Input type="date" value={formData.dataConversao} onChange={e => setFormData({...formData, dataConversao: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Data do Batismo em Águas</Label>
-                <Input type="date" value={formData.dataBatismo} onChange={e => setFormData({...formData, dataBatismo: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Função que exerce na Igreja</Label>
-                <Input value={formData.funcaoIgreja} onChange={e => setFormData({...formData, funcaoIgreja: e.target.value})} />
-              </div>
-              <Button className="col-span-2 bg-navy mt-4" onClick={handleSaveCore} disabled={isSaving}>
-                {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
-                Salvar Dados Eclesiásticos
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="contact" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <Card className="border-none shadow-sm">
-            <CardHeader>
+            <CardHeader className="pb-2">
               <CardTitle className="text-navy text-lg flex items-center gap-2">
                 <Phone className="text-petrol" size={20} /> Contato e Endereço
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>E-mail</Label>
-                <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Telefone</Label>
-                <Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Celular 2 / WhatsApp</Label>
-                <Input value={formData.phone2} onChange={e => setFormData({...formData, phone2: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>CEP (Auto-preenchimento)</Label>
-                <Input value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} maxLength={8} />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2 space-y-2">
-                  <Label>Logradouro</Label>
-                  <Input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+            <CardContent className="space-y-8">
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 flex items-center gap-2 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  <Phone size={14} /> Informações de Contato
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">E-mail Principal</Label>
+                    <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Telefone Fixo</Label>
+                    <Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Celular 2 / WhatsApp</Label>
+                    <Input value={formData.phone2} onChange={e => setFormData({...formData, phone2: e.target.value})} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Número</Label>
-                  <Input value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+              </fieldset>
+
+              <fieldset className="p-6 rounded-2xl border border-slate-100 bg-white shadow-sm space-y-4">
+                <legend className="px-3 flex items-center gap-2 text-xs font-black text-petrol uppercase tracking-widest bg-white rounded-full border border-slate-100">
+                  <MapPin size={14} /> Endereço Residencial
+                </legend>
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">CEP (Automático)</Label>
+                    <Input value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} maxLength={8} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-2">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Logradouro / Rua</Label>
+                    <Input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Número</Label>
+                    <Input value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Complemento</Label>
+                    <Input value={formData.complement} onChange={e => setFormData({...formData, complement: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Bairro</Label>
+                    <Input value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">Cidade</Label>
+                    <Input value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
+                  </div>
+                  <div className="space-y-2 lg:col-span-1">
+                    <Label className="text-[10px] uppercase font-black text-slate-400">UF / Estado</Label>
+                    <Input value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} maxLength={2} />
+                  </div>
                 </div>
+              </fieldset>
+
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <Button className="bg-petrol text-white px-8 h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-petrol/20 hover:bg-navy transition-colors w-full md:w-auto" onClick={handleSaveCore} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
+                  Atualizar Endereço
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label>Complemento</Label>
-                <Input value={formData.complement} onChange={e => setFormData({...formData, complement: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Bairro</Label>
-                <Input value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label>Cidade</Label>
-                  <Input value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>UF</Label>
-                  <Input value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} maxLength={2} />
-                </div>
-              </div>
-              <Button className="col-span-2 bg-navy mt-4" onClick={handleSaveCore} disabled={isSaving}>
-                {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2" />}
-                Atualizar Endereço
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1292,7 +1485,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-8 w-8 text-slate-400 hover:text-blue-600 transition-opacity"
                               onClick={() => {
                                 setEditingParcel(p);
                                 setEditParcelData({
@@ -1309,7 +1502,7 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
                           <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="h-8 w-8 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-8 w-8 text-red-400 transition-opacity"
                             onClick={() => handleDeleteParcel(p.id, p.parcelNumber)}
                           >
                             <Trash2 size={14} />
@@ -1439,27 +1632,114 @@ export const StudentProfileTabs: React.FC<StudentProfileTabsProps> = ({ student,
           <Card className="border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-navy text-lg flex items-center gap-2">
-                <FileUp className="text-petrol" size={20} /> Dossiê Digital (GED)
+                <FileUp className="text-petrol" size={20} /> Dossiê Digital e Aceites
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Electronic Signatures Section */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-6">
+                <h3 className="text-sm font-black text-navy uppercase tracking-tight mb-4 flex items-center gap-2">
+                  <CheckCircle2 size={18} className="text-emerald-500" /> Assinaturas Eletrônicas
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { id: 'contract', label: 'Contrato', signed: student.contractSigned, data: student.contractSignatureData },
+                    { id: 'ficha', label: 'Ficha de Matrícula', signed: student.fichaSigned, data: student.fichaSignatureData },
+                    { id: 'requerimento', label: 'Requerimento', signed: student.requerimentoSigned, data: student.requerimentoSignatureData },
+                  ].map((doc) => (
+                    <div key={doc.id} className={cn(
+                      "p-4 rounded-xl border flex flex-col gap-2",
+                      doc.signed ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"
+                    )}>
+                      <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{doc.label}</p>
+                      <div className="flex items-center justify-between">
+                        <span className={cn("text-xs font-bold uppercase", doc.signed ? "text-emerald-700" : "text-red-700")}>
+                          {doc.signed ? 'Assinado' : 'Pendente'}
+                        </span>
+                        {doc.signed && <ShieldCheck size={16} className="text-emerald-500" />}
+                      </div>
+                      {doc.signed && doc.data && (
+                        <div className="mt-2 pt-2 border-t border-emerald-100 space-y-1">
+                          <p className="text-[9px] text-emerald-600 font-medium">Data: {new Date(doc.data.date).toLocaleString('pt-BR')}</p>
+                          <p className="text-[9px] text-emerald-600 font-mono truncate">Hash: {doc.data.hash}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
-                {['RG/CPF (Frente)', 'RG/CPF (Verso)', 'Comprovante Residência', 'Histórico Escolar'].map((doc) => (
-                  <div key={doc} className="p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-petrol transition-colors cursor-pointer flex flex-col items-center justify-center gap-2 bg-gray-50/50">
+                {['RG/CPF (Frente)', 'RG/CPF (Verso)', 'Comprovante Residência', 'Histórico Escolar'].map((docName) => (
+                  <div key={docName} className="p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-petrol transition-colors cursor-pointer flex flex-col items-center justify-center gap-2 bg-gray-50/50">
                     <FileUp size={24} className="text-gray-400" />
-                    <span className="text-xs font-bold text-navy text-center">{doc}</span>
+                    <span className="text-xs font-bold text-navy text-center">{docName}</span>
                     <span className="text-[10px] text-gray-400">PDF, PNG ou JPG</span>
                   </div>
                 ))}
               </div>
               <div className="p-4 bg-petrol/5 rounded-xl border border-petrol/10">
-                <p className="text-xs font-bold text-petrol uppercase mb-2">Status da Documentação</p>
+                <p className="text-xs font-bold text-petrol uppercase mb-2">Status da Documentação Digital</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div className="w-1/4 h-full bg-petrol"></div>
                   </div>
                   <span className="text-xs font-bold text-navy">25%</span>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="aceites" className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-navy text-lg flex items-center gap-2">
+                <CheckCircle2 className="text-emerald-600" size={20} /> Histórico de Aceites Digitais
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { label: 'Contrato Educacional', field: 'acceptedContract', dateField: 'acceptedContractAt' },
+                  { label: 'Requerimento de Matrícula', field: 'acceptedApplication', dateField: 'acceptedApplicationAt' },
+                  { label: 'Ficha de Matrícula', field: 'acceptedForm', dateField: 'acceptedFormAt' }
+                ].map((item) => (
+                  <div key={item.field} className={cn(
+                    "p-6 rounded-2xl border-2 flex flex-col gap-3 transition-all",
+                    student[item.field] 
+                      ? "bg-emerald-50 border-emerald-100 items-start" 
+                      : "bg-slate-50 border-slate-100 items-center justify-center text-slate-400"
+                  )}>
+                    {student[item.field] ? (
+                      <>
+                        <ShieldCheck className="text-emerald-600" size={32} />
+                        <div>
+                          <p className="font-black text-emerald-900 uppercase text-xs tracking-tight">{item.label}</p>
+                          <p className="text-[10px] text-emerald-700 font-bold mt-1">STATUS: ACEITO</p>
+                          <p className="text-[9px] text-emerald-600/70 mt-2 font-mono">
+                            DATA: {student[item.dateField] ? new Date(student[item.dateField]).toLocaleString('pt-BR') : 'Sem registro'}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle size={32} className="opacity-20" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-center">{item.label} Pendente</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-amber-50 p-6 rounded-2xl border border-amber-100 mt-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <Info className="text-amber-600" size={20} />
+                  <h4 className="font-bold text-amber-900 text-sm">Informação Legal</h4>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Os aceites digitais registrados acima possuem validade jurídica conforme a legislação brasileira de contratos eletrônicos. No momento do aceite, o sistema registra o carimbo de tempo (timestamp) e os dados de identificação do usuário.
+                </p>
               </div>
             </CardContent>
           </Card>

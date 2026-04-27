@@ -89,26 +89,34 @@ export const PortalDashboard: React.FC = () => {
   const [curriculum, setCurriculum] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
 
-  const [acceptingContract, setAcceptingContract] = useState(false);
+  const [acceptingDoc, setAcceptingDoc] = useState<string | null>(null);
 
-  const handleAcceptContract = async () => {
+  const handleAcceptDocument = async (type: 'contract' | 'ficha' | 'requerimento') => {
     if (!currentStudent || !currentStudent.id) return;
-    setAcceptingContract(true);
+    setAcceptingDoc(type);
     try {
-      await updateDoc(doc(db, 'students', currentStudent.id), {
-        contractSigned: true,
-        contractSignatureData: {
-          date: new Date().toISOString(),
-          ip: 'IP Coletado', // Cannot easily grab IP from client-side without external API, simulate it
-          hash: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-        }
-      });
-      alert('Contrato assinado com sucesso!');
+      const fieldPrefix = type === 'contract' ? 'contract' : type === 'ficha' ? 'ficha' : 'requerimento';
+      const updateData: any = {};
+      updateData[`${fieldPrefix}Signed`] = true;
+      updateData[`${fieldPrefix}SignatureData`] = {
+        date: new Date().toISOString(),
+        ip: 'Coleta Digital',
+        userAgent: navigator.userAgent,
+        hash: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+      };
+
+      await updateDoc(doc(db, 'students', currentStudent.id), updateData);
+      
+      let label = 'Contrato';
+      if (type === 'ficha') label = 'Ficha de Matrícula';
+      if (type === 'requerimento') label = 'Requerimento';
+      
+      alert(`${label} assinado com sucesso!`);
     } catch (err) {
       console.error(err);
-      alert('Erro ao assinar contrato.');
+      alert('Erro ao assinar documento.');
     } finally {
-      setAcceptingContract(false);
+      setAcceptingDoc(null);
     }
   };
 
@@ -1212,69 +1220,90 @@ export const PortalDashboard: React.FC = () => {
   const renderContratos = () => {
     if (!currentStudent) return null;
     
-    // Simplification for the student portal contract renderer.
-    // Ideally this matches the Exact template, but for now we create a generic placeholder or fetch.
-    const rawTemplate = systemConfig?.contractTemplate || `# CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – 2026
+    const rawContract = systemConfig?.contractTemplate || `# CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – 2026
+Pelo presente instrumento... [Léia no sistema admin]`;
 
-Pelo presente instrumento particular, de um lado, a **ESCOLA TEOLÓGICA DAS ASSEMBLEIAS DE DEUS NO BRASIL**, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº **40.800.393/0001-32**, com sede na R. Dr. Célso Ramalho, 70 - Lagoa Seca, Natal - RN, 59022-330, neste ato representada por seu representante legal **SÉRGIO LINS PESSOA**, doravante denominada CONTRATADA;
+    const rawFicha = `# FICHA DE MATRÍCULA – 2026
+Confirmo que os dados cadastrais informados no meu perfil estão corretos e atualizados.`;
 
-E, de outro lado, o(a) aluno(a) **{{NOME_ALUNO}}**, inscrito(a) no CPF nº **{{CPF_ALUNO}}**, nascido(a) em **{{DATA_NASCIMENTO}}**, doravante denominado(a) CONTRATANTE;
+    const rawRequerimento = `# REQUERIMENTO DE MATRÍCULA / BOLSAS
+Solicito minha matrícula no curso e turma vinculados ao meu perfil, aceitando as condições financeiras acordadas.`;
 
-Cláusula 1: O contratante concorda com as cláusulas e normas de convívio e as regras da secretaria da ESTEADEB.`;
+    const parseDoc = (text: string) => {
+      return text
+        .replace(/\{\{NOME\}\}|\{\{NOME_ALUNO\}\}/g, currentStudent.name || '---')
+        .replace(/\{\{CPF\}\}|\{\{CPF_ALUNO\}\}/g, currentStudent.cpf || '---')
+        .replace(/\{\{NASCIMENTO\}\}|\{\{DATA_NASCIMENTO\}\}/g, currentStudent.birthDate || '---')
+        .replace(/\{\{MATRICULA\}\}/g, currentStudent.matricula || currentStudent.id || '---');
+    };
 
-    const parsedContract = rawTemplate
-      .replace(/\{\{NOME\}\}|\{\{NOME_ALUNO\}\}/g, currentStudent.name || '---')
-      .replace(/\{\{CPF\}\}|\{\{CPF_ALUNO\}\}/g, currentStudent.cpf || '---')
-      .replace(/\{\{NASCIMENTO\}\}|\{\{DATA_NASCIMENTO\}\}/g, currentStudent.birthDate || '---')
-      .replace(/\{\{MATRICULA\}\}/g, currentStudent.matricula || currentStudent.id || '---');
+    const docSections = [
+      { 
+        id: 'contract' as const, 
+        title: 'Contrato de Prestação de Serviços', 
+        template: rawContract, 
+        signed: currentStudent.contractSigned, 
+        data: currentStudent.contractSignatureData 
+      },
+      { 
+        id: 'ficha' as const, 
+        title: 'Ficha de Matrícula', 
+        template: rawFicha, 
+        signed: currentStudent.fichaSigned, 
+        data: currentStudent.fichaSignatureData 
+      },
+      { 
+        id: 'requerimento' as const, 
+        title: 'Requerimento de Matrícula', 
+        template: rawRequerimento, 
+        signed: currentStudent.requerimentoSigned, 
+        data: currentStudent.requerimentoSignatureData 
+      }
+    ];
 
     return (
       <div className="space-y-12 pb-20">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Aceite Eletrônico</h2>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em]">Gerencie seu contrato educacional on-line</p>
+          <h2 className="text-3xl font-black text-navy uppercase tracking-tighter">Aceite de Documentos</h2>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em]">Gerencie sua documentação acadêmica on-line</p>
         </div>
 
-        <div className="bg-white p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
-          {currentStudent.contractSigned ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-6">
-                <ShieldCheck size={40} />
-              </div>
-              <h3 className="text-2xl font-black text-emerald-800 uppercase tracking-tight">Contrato Assinado</h3>
-              <p className="text-slate-500 font-medium mt-2 max-w-sm mx-auto">
-                Seu contrato foi assinado digitalmente em {new Date(currentStudent.contractSignatureData?.date).toLocaleString('pt-BR')}.
-              </p>
-              <div className="mt-8 p-4 bg-slate-50 border border-slate-200 rounded-xl max-w-sm mx-auto w-full text-left">
-                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Dados de Autenticidade</p>
-                 <p className="text-xs text-slate-600 font-mono"><strong>Hash:</strong> {currentStudent.contractSignatureData?.hash}</p>
-                 <p className="text-xs text-slate-600 font-mono mt-1"><strong>IP:</strong> {currentStudent.contractSignatureData?.ip}</p>
-              </div>
+        <div className="grid grid-cols-1 gap-8">
+          {docSections.map((section) => (
+            <div key={section.id} className="bg-white p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+              <h3 className="text-xl font-black text-navy uppercase mb-6 flex items-center gap-2">
+                <FileTextIcon size={20} className="text-petrol" /> {section.title}
+              </h3>
+              
+              {section.signed ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center bg-emerald-50/30 rounded-3xl border border-emerald-100">
+                  <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+                    <ShieldCheck size={32} />
+                  </div>
+                  <h4 className="text-xl font-black text-emerald-800 uppercase tracking-tight">Documento Assinado</h4>
+                  <p className="text-slate-500 font-medium mt-2 text-sm">
+                    Assinado digitalmente em {new Date(section.data?.date).toLocaleString('pt-BR')}.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="prose prose-sm max-w-none prose-slate bg-slate-50 p-6 rounded-2xl border border-slate-200 h-[250px] overflow-y-auto">
+                    <Markdown>{parseDoc(section.template)}</Markdown>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button 
+                      onClick={() => handleAcceptDocument(section.id)}
+                      disabled={acceptingDoc !== null}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white h-12 px-6 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 flex items-center gap-2 text-xs"
+                    >
+                      {acceptingDoc === section.id ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                      Aceitar e Assinar
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div>
-              <div className="flex items-center gap-3 mb-6 p-4 bg-amber-50 text-amber-800 border fill-amber-100 border-amber-200 rounded-2xl">
-                 <AlertTriangle size={24} className="shrink-0" />
-                 <div>
-                   <p className="font-bold text-sm">Você possui pendência de assinatura.</p>
-                   <p className="text-xs mt-1">Leia o contrato abaixo e clique em "Li e Aceito os Termos" para emitir seu aceite eletrônico.</p>
-                 </div>
-              </div>
-              <div className="prose prose-sm max-w-none prose-slate bg-slate-50 p-6 md:p-10 rounded-2xl border border-slate-200 h-[400px] overflow-y-auto mb-8">
-                <Markdown>{parsedContract}</Markdown>
-              </div>
-              <div className="flex justify-end">
-                <Button 
-                  onClick={handleAcceptContract}
-                  disabled={acceptingContract}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-14 px-8 rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-600/20 flex items-center gap-3"
-                >
-                  {acceptingContract ? <Loader2 size={20} className="animate-spin" /> : <ShieldCheck size={20} />}
-                  Eu Li e Aceito os Termos
-                </Button>
-              </div>
-            </div>
-          )}
+          ))}
         </div>
       </div>
     );

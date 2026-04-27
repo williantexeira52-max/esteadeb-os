@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { LogIn, User, Lock, Eye, EyeOff, Loader2, GraduationCap } from 'lucide-react';
 import { motion } from 'motion/react';
-import { doc, getDocFromServer } from 'firebase/firestore';
+import { collection, doc, getDocs, query, where, getDocFromServer } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 
 export const PortalLogin: React.FC = () => {
   const { loginStudent, systemConfig } = useAuth();
-  const [cpf, setCpf] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -16,26 +16,27 @@ export const PortalLogin: React.FC = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    console.log("PortalLogin: Submitting...", { cpf, hasPassword: !!password });
+    console.log("PortalLogin: Submitting...", { identifier, hasPassword: !!password });
     setError('');
     
-    if (!cpf || !password) {
+    if (!identifier || !password) {
       setError('Por favor, preencha todos os campos.');
-      setIsLoading(true); // temporary to show feedback
+      setIsLoading(true);
       setTimeout(() => setIsLoading(false), 500);
       return;
     }
 
-    const cleanIdentifier = cpf.replace(/\D/g, '');
-    if (cleanIdentifier.length < 4) {
-      setError('Identificador muito curto. Verifique seu CPF ou Matrícula.');
+    const cleanIdentifier = identifier.trim().toLowerCase();
+    if (cleanIdentifier.length < 3) {
+      setError('Identificador muito curto. Verifique seu Usuário, Matrícula ou CPF.');
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log("PortalLogin: Authenticating with Firebase Auth first to bypass rule blocks...");
-      const studentEmail = `${cleanIdentifier}@estudante.esteadeb.com.br`;
+      console.log("PortalLogin: Authenticating with Firebase Auth first...");
+      const isEmail = cleanIdentifier.includes('@');
+      const studentEmail = isEmail ? cleanIdentifier : `${cleanIdentifier.replace(/\D/g, '') || cleanIdentifier}@estudante.esteadeb.com.br`;
       const authPassword = password.length < 6 ? `${password}_student` : password;
       
       let isNewAuthProvision = false;
@@ -46,48 +47,91 @@ export const PortalLogin: React.FC = () => {
       } catch (authErr: any) {
         if (authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-not-found') {
           try {
-            console.log("PortalLogin: Provisioning user to Auth...");
-            // Create user in Auth on the fly so we can fetch Firestore
+             // If we didn't find them, we can't provision safely yet because we don't know their real CPF
+             // But the rules require auth. Let's do an anonymous login? Not enabled.
+             // We will provision them with this email, and if it fails to find the doc, we delete the user.
             await createUserWithEmailAndPassword(auth, studentEmail, authPassword);
             isNewAuthProvision = true;
           } catch (createErr: any) {
-            console.error("Failed to provision student to Auth", createErr);
-            throw createErr;
+             throw createErr;
           }
         } else {
           throw authErr;
         }
       }
 
-      // 2. NOW we are authenticated (either logged in or newly created). We can fetch Firestore safely.
-      console.log("PortalLogin: Fetching student doc...");
-      const studentRef = doc(db, 'students', cleanIdentifier);
-      const snap = await getDocFromServer(studentRef);
-      
-      const genericError = 'CPF ou senha (4 últimos dígitos do CPF) incorretos.';
+      // 2. NOW we are authenticated. We can query Firestore safely.
+      // Since identifier could be CPF, user, matricula or email.
+      console.log("PortalLogin: Querying student doc...");
+      let studentData = null;
+      let studentDocId = null;
 
-      if (!snap.exists()) {
+      const studentsRef = collection(db, 'students');
+      
+      // We will try several queries
+      const queries = [
+        query(studentsRef, where('cpf', '==', cleanIdentifier.replace(/\D/g, ''))), // CPF formatting
+        query(studentsRef, where('matricula', '==', cleanIdentifier)),
+        query(studentsRef, where('email', '==', cleanIdentifier))
+      ];
+
+      for (const q of queries) {
+        try {
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            studentDocId = snap.docs[0].id;
+            studentData = { id: studentDocId, ...snap.docs[0].data() };
+            break;
+          }
+        } catch (e) {
+          console.warn("Query failed, might be rules restriction", e);
+        }
+      }
+
+      // Fallback: If cleanIdentifier happens to be the document ID (CPF) directly
+      if (!studentData) {
+        try {
+          // just try with raw numbers (usually document ID is raw CPF)
+          const rawCpf = cleanIdentifier.replace(/\D/g, '');
+          if (rawCpf && rawCpf.length === 11) {
+            const snap = await getDocFromServer(doc(db, 'students', rawCpf));
+            if (snap.exists()) {
+              studentData = { id: snap.id, ...snap.data() };
+            }
+          }
+        } catch (e) {
+            console.warn("Direct doc fetch failed");
+        }
+      }
+
+      const genericError = 'Login incorreto. Verifique suas credenciais.';
+
+      if (!studentData) {
         console.warn("PortalLogin: Student not found in Firestore");
         await auth.signOut(); // Kick them out if not a real student
-        setError(genericError);
+        setError('Aluno não encontrado com este identificador. Tente usar seu CPF apenas com números ou Matrícula correta.');
         setIsLoading(false);
         return;
       }
 
-      const studentData = { id: snap.id, ...snap.data() } as any;
-      
-      // 3. Logic: Verify the password against Firestore custom pass logic (if needed, though Firebase Auth just succeeded)
-      // If `isNewAuthProvision` is true, we just created the account with ANY password the user typed.
-      // So we MUST strictly verify against Firestore's expectation.
+      // 3. Logic: Verify the password against Firestore custom pass logic
       if (isNewAuthProvision) {
-        const cpfNumbers = (studentData.cpf || snap.id || "").toString().replace(/\D/g, '');
+        const cpfNumbers = (studentData.cpf || studentData.id || "").toString().replace(/\D/g, '');
         const lastFourOfCpf = cpfNumbers.slice(-4);
-        const expectedPassword = studentData.portalPassword || lastFourOfCpf;
+        const expectedPassword = studentData.portalPassword || studentData.matricula || lastFourOfCpf;
         
         if (password !== expectedPassword) {
           console.warn("PortalLogin: Password mismatch on first provision");
-          await auth.signOut(); // They guessed wrong, kick them out
-          setError(genericError);
+          if (auth.currentUser) {
+            try {
+              // Delete the incorrectly created auth user so they can try again with the right password
+              await auth.currentUser.delete();
+            } catch (err) {
+              console.error("Failed to delete incorrect auth provision", err);
+            }
+          }
+          await auth.signOut();
+          setError('Senha incorreta.');
           setIsLoading(false);
           return;
         }
@@ -106,10 +150,6 @@ export const PortalLogin: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const formatCpf = (value: string) => {
-    return value.replace(/\D/g, '').slice(0, 11);
   };
 
   return (
@@ -162,7 +202,7 @@ export const PortalLogin: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="p-8 md:p-12 space-y-8 bg-black/20 backdrop-blur-sm">
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] ml-2">Identidade Acadêmica (CPF/Matrícula)</label>
+              <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] ml-2">Usuário, Matrícula ou CPF</label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-white/20 group-focus-within:text-esteadeb-blue transition-colors">
                   <User size={20} />
@@ -170,16 +210,19 @@ export const PortalLogin: React.FC = () => {
                 <input 
                   type="text"
                   required
-                  placeholder="000.000.000-00"
+                  placeholder="Digite sua identificação..."
                   className="w-full h-16 pl-14 pr-6 bg-white/[0.03] border border-white/10 rounded-2xl focus:border-esteadeb-blue/50 focus:bg-white/[0.05] outline-none transition-all font-bold text-white placeholder:text-white/10 text-lg"
-                  value={cpf}
-                  onChange={(e) => setCpf(formatCpf(e.target.value))}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                 />
               </div>
             </div>
 
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] ml-2">Senha Digital</label>
+              <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] ml-2 flex justify-between">
+                <span>Senha Digital</span>
+                <span className="text-white/20">Sua Matrícula</span>
+              </label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-white/20 group-focus-within:text-esteadeb-blue transition-colors">
                   <Lock size={20} />
